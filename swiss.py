@@ -6,12 +6,36 @@ from models import Participant, Match, Round, MatchResult, db
 
 
 def get_standings():
-    """Get participants sorted by points (descending)."""
-    participants = Participant.query.order_by(
-        Participant.points.desc(),
-        Participant.win_count.desc()
-    ).all()
-    return participants
+    """Get participants sorted by wins (desc), then points (desc).
+    Calculates totals across all rounds from MatchResult table."""
+    from models import MatchResult
+
+    # Get all participants
+    participants = Participant.query.all()
+
+    # Calculate totals from MatchResult for each participant
+    participants_with_stats = []
+    for p in participants:
+        # Sum up all results from all rounds
+        stats = db.session.query(
+            db.func.coalesce(db.func.sum(MatchResult.win), 0).label('total_win'),
+            db.func.coalesce(db.func.sum(MatchResult.loss), 0).label('total_loss'),
+            db.func.coalesce(db.func.sum(MatchResult.draw), 0).label('total_draw'),
+            db.func.coalesce(db.func.sum(MatchResult.points), 0).label('total_points')
+        ).filter(MatchResult.player_id == p.id).first()
+
+        participants_with_stats.append({
+            'participant': p,
+            'win_count': stats.total_win,
+            'loss_count': stats.total_loss,
+            'draw_count': stats.total_draw,
+            'points': stats.total_points
+        })
+
+    # Sort by wins (desc), then points (desc)
+    participants_with_stats.sort(key=lambda x: (-x['win_count'], -x['points']))
+
+    return [p['participant'] for p in participants_with_stats]
 
 
 def create_round(round_number):
@@ -272,31 +296,20 @@ def process_match_results(match_id, results):
     player_ids = [match.player1_id, match.player2_id, match.player3_id, match.player4_id]
     player_ids = [p for p in player_ids if p is not None]
 
-    # Update participant stats
+    # Save match results to MatchResult table
     for player_id in player_ids:
-        participant = Participant.query.get(player_id)
-        if participant:
-            # Find results for this player
-            player_result = next((r for r in results if r['player_id'] == player_id), None)
-            if player_result:
-                # Set initial stats (not incrementing, since this is the first recording)
-                participant.win_count = player_result.get('win', 0)
-                participant.loss_count = player_result.get('loss', 0)
-                participant.draw_count = player_result.get('draw', 0)
-                participant.points = player_result.get('points', 0)
-
-                db.session.add(participant)
-
-                # Save match result
-                match_result = MatchResult(
-                    match_id=match_id,
-                    player_id=player_id,
-                    win=player_result.get('win', 0),
-                    loss=player_result.get('loss', 0),
-                    draw=player_result.get('draw', 0),
-                    points=player_result.get('points', 0)
-                )
-                db.session.add(match_result)
+        player_result = next((r for r in results if r['player_id'] == player_id), None)
+        if player_result:
+            # Save match result
+            match_result = MatchResult(
+                match_id=match_id,
+                player_id=player_id,
+                win=player_result.get('win', 0),
+                loss=player_result.get('loss', 0),
+                draw=player_result.get('draw', 0),
+                points=player_result.get('points', 0)
+            )
+            db.session.add(match_result)
 
     # Mark match as completed
     match.result_json = str(results)
@@ -318,31 +331,20 @@ def update_match_results(match_id, results):
     player_ids = [match.player1_id, match.player2_id, match.player3_id, match.player4_id]
     player_ids = [p for p in player_ids if p is not None]
 
-    # Update participant stats
+    # Save updated match results to MatchResult table
     for player_id in player_ids:
-        participant = Participant.query.get(player_id)
-        if participant:
-            # Find results for this player
-            player_result = next((r for r in results if r['player_id'] == player_id), None)
-            if player_result:
-                # Update stats with the new values (not incrementing)
-                participant.win_count = player_result.get('win', 0)
-                participant.loss_count = player_result.get('loss', 0)
-                participant.draw_count = player_result.get('draw', 0)
-                participant.points = player_result.get('points', 0)
-
-                db.session.add(participant)
-
-                # Save match result
-                match_result = MatchResult(
-                    match_id=match_id,
-                    player_id=player_id,
-                    win=player_result.get('win', 0),
-                    loss=player_result.get('loss', 0),
-                    draw=player_result.get('draw', 0),
-                    points=player_result.get('points', 0)
-                )
-                db.session.add(match_result)
+        player_result = next((r for r in results if r['player_id'] == player_id), None)
+        if player_result:
+            # Save match result
+            match_result = MatchResult(
+                match_id=match_id,
+                player_id=player_id,
+                win=player_result.get('win', 0),
+                loss=player_result.get('loss', 0),
+                draw=player_result.get('draw', 0),
+                points=player_result.get('points', 0)
+            )
+            db.session.add(match_result)
 
     # Mark match as completed
     match.result_json = str(results)
