@@ -80,12 +80,10 @@ def participants():
         return jsonify(result)
 
     elif request.method == 'POST':
-        # Require admin for adding participants
+        # Require login for adding participants
         user = get_current_user()
         if not user:
             return jsonify({'error': 'Login required'}), 401
-        if not user.is_admin:
-            return jsonify({'error': 'Admin access required'}), 403
 
         data = request.get_json()
         name = data.get('name')
@@ -154,8 +152,6 @@ def record_match():
     user = get_current_user()
     if not user:
         return jsonify({'error': 'Login required'}), 401
-    if not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
 
     data = request.get_json()
     match_id = data.get('match_id')
@@ -386,8 +382,6 @@ def update_player_match(participant_id, round_id):
     user = get_current_user()
     if not user:
         return jsonify({'error': 'Login required'}), 401
-    if not user.is_admin:
-        return jsonify({'error': 'Admin access required'}), 403
 
     participant = Participant.query.get(participant_id)
     if not participant:
@@ -510,6 +504,9 @@ with app.app_context():
         admin_user.is_admin = True
     if guest_user:
         guest_user.is_admin = False
+        # Update password for guest if it was reset
+        if not guest_user.password_hash.startswith('pbkdf2:sha256'):
+            guest_user.set_password('guest123')
 
     db.session.commit()
 
