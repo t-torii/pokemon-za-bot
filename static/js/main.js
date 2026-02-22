@@ -38,10 +38,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
-    // 参加者管理
-    const addParticipantForm = document.getElementById('add-participant-form');
-    addParticipantForm.addEventListener('submit', handleAddParticipant);
-
     // 試合生成ボタン
     document.getElementById('generate-matches-btn').addEventListener('click', generateMatches);
 
@@ -138,34 +134,23 @@ async function handleLogout() {
     }
 }
 
-async function handleAddParticipant(e) {
-    e.preventDefault();
-    const nameInput = document.getElementById('participant-name');
-    const name = nameInput.value.trim();
-
-    if (!name) return;
-
+// 新規登録
+async function handleRegister(username, password) {
     try {
-        const response = await fetch('/api/participants', {
+        const response = await fetch('/register', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name })
+            body: JSON.stringify({ username, password })
         });
 
         if (response.ok) {
-            nameInput.value = '';
-            loadParticipants();
-            refreshStandings();
-        } else if (response.status === 401) {
-            alert('ログインが必要です');
-            window.location.href = '/';
+            return { success: true };
         } else {
             const error = await response.json();
-            alert('エラー: ' + (error.error || '参加者の追加に失敗しました'));
+            return { success: false, error: error.error || '登録に失敗しました' };
         }
     } catch (error) {
-        console.error('参加者の追加エラー:', error);
-        alert('エラー: ' + error.message);
+        return { success: false, error: error.message || 'エラーが発生しました' };
     }
 }
 
@@ -196,8 +181,21 @@ async function loadParticipants() {
         const response = await fetch('/api/participants');
         const participants = await response.json();
 
+        // 管理者か通常ユーザーかで表示を分ける
+        const is_admin = currentUser && currentUser.is_admin;
+
         const tbody = document.getElementById('participants-body');
-        tbody.innerHTML = participants.map(p => `
+        
+        if (participants.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; padding: 20px;">参加者がいません</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = participants.map(p => {
+            // 非管理者の場合、自分の参加者のみ表示し、削除ボタンを隠す
+            const canModify = is_admin || (currentUser && currentUser.participant_id === p.id);
+            
+            return `
             <tr class="participant-row" data-participant-id="${p.id}">
                 <td>${escapeHtml(p.name)}</td>
                 <td>${p.win_count}</td>
@@ -206,12 +204,12 @@ async function loadParticipants() {
                 <td>${p.points}</td>
                 <td>
                     <div class="player-actions">
-                        <button class="btn-result" onclick="showPlayerMatchResults(${p.id})">結果登録</button>
-                        <button class="btn-delete" onclick="deleteParticipant(${p.id})">削除</button>
+                        ${canModify ? `<button class="btn-result" onclick="showPlayerMatchResults(${p.id})">結果登録</button>` : ''}
+                        ${is_admin ? `<button class="btn-delete" onclick="deleteParticipant(${p.id})">削除</button>` : ''}
                     </div>
                 </td>
             </tr>
-        `).join('');
+        `}).join('');
     } catch (error) {
         console.error('参加者読み込みエラー:', error);
     }
@@ -367,12 +365,12 @@ async function editMatchResults(matchId) {
         container.innerHTML = `
             <div class="match-result-entry" data-match-id="${matchId}">
                 ${match.players.map((p, i) => p.id ? `
-                    <div class="player-result">
+                    <div class="player-result ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}" data-player-id="${p.id}">
                         <span>${escapeHtml(p.name)}:</span>
                         <div class="result-inputs">
                             <label>
                                 結果:
-                                <select class="result-select">
+                                <select class="result-select" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                                     <option value="win" ${match.results.find(r => r.player_id === p.id)?.win === 1 ? 'selected' : ''}>勝ち</option>
                                     <option value="lose" ${match.results.find(r => r.player_id === p.id)?.loss === 1 ? 'selected' : ''}>負け</option>
                                     <option value="draw" ${match.results.find(r => r.player_id === p.id)?.draw === 1 ? 'selected' : ''}>引き分け</option>
@@ -380,7 +378,7 @@ async function editMatchResults(matchId) {
                             </label>
                             <label>
                                 ポイント:
-                                <input type="number" min="0" value="${match.results.find(r => r.player_id === p.id)?.points || 0}" class="points-input">
+                                <input type="number" min="0" value="${match.results.find(r => r.player_id === p.id)?.points || 0}" class="points-input" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                             </label>
                         </div>
                     </div>
@@ -727,12 +725,12 @@ async function editPlayerMatch(matchId, roundId, tableNumber) {
         container.innerHTML = `
             <div class="player-match-form-entry" data-match-id="${matchId}" data-table-number="${tableNumber}" data-round-id="${roundId}">
                 ${match.players.map((p, i) => p.id ? `
-                    <div class="player-result ${p.id === currentPlayerId ? '' : 'disabled'}" data-player-id="${p.id}">
+                    <div class="player-result ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}" data-player-id="${p.id}">
                         <span>${escapeHtml(p.name)}:</span>
                         <div class="result-inputs">
                             <label>
                                 結果:
-                                <select class="player-result-select" ${p.id === currentPlayerId ? '' : 'disabled'}>
+                                <select class="player-result-select" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                                     <option value="win">勝ち</option>
                                     <option value="lose" selected>負け</option>
                                     <option value="draw">引き分け</option>
@@ -740,7 +738,7 @@ async function editPlayerMatch(matchId, roundId, tableNumber) {
                             </label>
                             <label>
                                 ポイント:
-                                <input type="number" min="0" value="0" class="player-points-input" ${p.id === currentPlayerId ? '' : 'disabled'}>
+                                <input type="number" min="0" value="0" class="player-points-input" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                             </label>
                         </div>
                     </div>
@@ -821,6 +819,8 @@ async function submitPlayerMatchResult() {
         } else if (response.status === 401) {
             alert('ログインが必要です');
             window.location.href = '/';
+        } else if (response.status === 403) {
+            alert('アクセスが拒否されました');
         } else {
             const error = await response.json();
             alert('エラー: ' + (error.error || '結果の更新に失敗しました'));
@@ -865,12 +865,12 @@ async function showMatchResults(matchId) {
         container.innerHTML = `
             <div class="match-result-entry" data-match-id="${matchId}">
                 ${match.players.map((p, i) => p.id ? `
-                    <div class="player-result">
+                    <div class="player-result ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}" data-player-id="${p.id}">
                         <span>${escapeHtml(p.name)}:</span>
                         <div class="result-inputs">
                             <label>
                                 結果:
-                                <select class="result-select">
+                                <select class="result-select" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                                     <option value="win">勝ち</option>
                                     <option value="lose" selected>負け</option>
                                     <option value="draw">引き分け</option>
@@ -878,7 +878,7 @@ async function showMatchResults(matchId) {
                             </label>
                             <label>
                                 ポイント:
-                                <input type="number" min="0" value="0" class="points-input" placeholder="例: 15">
+                                <input type="number" min="0" value="0" class="points-input" placeholder="例: 15" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                             </label>
                         </div>
                     </div>

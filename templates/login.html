@@ -18,6 +18,32 @@
             text-align: center;
             margin-bottom: 30px;
         }
+        .login-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .login-tab {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+            cursor: pointer;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .login-tab.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        .form-section {
+            display: none;
+        }
+        .form-section.active {
+            display: block;
+        }
         .form-group {
             margin-bottom: 20px;
         }
@@ -35,22 +61,38 @@
             box-sizing: border-box;
         }
         .form-group input:focus {
-            border-color: #4a90d9;
+            border-color: #667eea;
             outline: none;
         }
         .btn-login {
             width: 100%;
             padding: 14px;
-            background: #4a90d9;
+            background: #667eea;
             color: white;
             border: none;
             border-radius: 6px;
             font-size: 16px;
             cursor: pointer;
             margin-top: 10px;
+            transition: background 0.3s ease;
         }
         .btn-login:hover {
-            background: #357abd;
+            background: #5568d3;
+        }
+        .btn-register {
+            width: 100%;
+            padding: 14px;
+            background: #38a169;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.3s ease;
+        }
+        .btn-register:hover {
+            background: #2f855a;
         }
         .error-message {
             color: #e74c3c;
@@ -70,30 +112,79 @@
 </head>
 <body>
     <div class="login-container">
-        <h2>ログイン</h2>
-        <div id="error-message" class="error-message"></div>
-        <form id="login-form">
-            <div class="form-group">
-                <label for="username">ユーザー名</label>
-                <input type="text" id="username" name="username" required autocomplete="username">
-            </div>
-            <div class="form-group">
-                <label for="password">パスワード</label>
-                <input type="password" id="password" name="password" required autocomplete="current-password">
-            </div>
-            <button type="submit" class="btn-login">ログイン</button>
-        </form>
+        <h2>Pokemon Za トーナメントマネージャー</h2>
+        <div class="login-tabs">
+            <div class="login-tab active" onclick="switchTab('login')">ログイン</div>
+            <div class="login-tab" onclick="switchTab('register')">新規登録</div>
+        </div>
 
+        <!-- Login Form -->
+        <div id="login-form-section" class="form-section active">
+            <div id="login-error-message" class="error-message"></div>
+            <form id="login-form">
+                <div class="form-group">
+                    <label for="username">ユーザー名</label>
+                    <input type="text" id="username" name="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="password">パスワード</label>
+                    <input type="password" id="password" name="password" required autocomplete="current-password">
+                </div>
+                <button type="submit" class="btn-login">ログイン</button>
+            </form>
+        </div>
+
+        <!-- Registration Form -->
+        <div id="register-form-section" class="form-section">
+            <div id="register-error-message" class="error-message"></div>
+            <form id="register-form">
+                <div class="form-group">
+                    <label for="reg-username">ユーザー名</label>
+                    <input type="text" id="reg-username" name="username" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                    <label for="reg-password">パスワード</label>
+                    <input type="password" id="reg-password" name="password" required autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn-register">登録する</button>
+            </form>
+        </div>
+
+        <div class="info-message">
+            登録すると、あなたの参加者アカウントが自動的に作成されます
+        </div>
     </div>
 
     <script>
+        // タブ切り替え
+        function switchTab(tabName) {
+            const tabs = document.querySelectorAll('.login-tab');
+            const sections = document.querySelectorAll('.form-section');
+
+            tabs.forEach(t => t.classList.remove('active'));
+            sections.forEach(s => s.classList.remove('active'));
+
+            if (tabName === 'login') {
+                tabs[0].classList.add('active');
+                document.getElementById('login-form-section').classList.add('active');
+            } else {
+                tabs[1].classList.add('active');
+                document.getElementById('register-form-section').classList.add('active');
+            }
+
+            // エラーメッセージをクリア
+            document.getElementById('login-error-message').textContent = '';
+            document.getElementById('register-error-message').textContent = '';
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
+            // ログインフォームの処理
             const loginForm = document.getElementById('login-form');
-            const errorMessage = document.getElementById('error-message');
+            const loginErrorMessage = document.getElementById('login-error-message');
 
             loginForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
-                errorMessage.textContent = '';
+                loginErrorMessage.textContent = '';
 
                 const username = document.getElementById('username').value.trim();
                 const password = document.getElementById('password').value;
@@ -111,10 +202,48 @@
                         // Login successful, redirect to home
                         window.location.href = '/';
                     } else {
-                        errorMessage.textContent = data.error || 'ログインに失敗しました';
+                        loginErrorMessage.textContent = data.error || 'ログインに失敗しました';
                     }
                 } catch (error) {
-                    errorMessage.textContent = 'エラーが発生しました: ' + error.message;
+                    loginErrorMessage.textContent = 'エラーが発生しました: ' + error.message;
+                }
+            });
+
+            // 登録フォームの処理
+            const registerForm = document.getElementById('register-form');
+            const registerErrorMessage = document.getElementById('register-error-message');
+
+            registerForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                registerErrorMessage.textContent = '';
+
+                const username = document.getElementById('reg-username').value.trim();
+                const password = document.getElementById('reg-password').value;
+
+                if (!username || !password) {
+                    registerErrorMessage.textContent = 'ユーザー名とパスワードを入力してください';
+                    return;
+                }
+
+                try {
+                    const response = await fetch('/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        // Registration successful
+                        alert('登録が完了しました！ログインしてください。');
+                        switchTab('login');
+                        document.getElementById('reg-password').value = '';
+                    } else {
+                        registerErrorMessage.textContent = data.error || '登録に失敗しました';
+                    }
+                } catch (error) {
+                    registerErrorMessage.textContent = 'エラーが発生しました: ' + error.message;
                 }
             });
         });

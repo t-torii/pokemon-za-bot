@@ -43,6 +43,28 @@ def admin_required(f):
     return decorated_function
 
 
+def user_participant_required(f):
+    """Decorator to verify participant belongs to current user."""
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = get_current_user()
+        if not user:
+            return jsonify({'error': 'Login required'}), 401
+        
+        # Admins can do everything
+        if user.is_admin:
+            return f(*args, **kwargs)
+        
+        # For non-admins, check if participant belongs to user
+        participant_id = kwargs.get('participant_id')
+        if participant_id and user.participant_id != participant_id:
+            return jsonify({'error': 'Access denied - this participant does not belong to you'}), 403
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
 @app.route('/')
 def index():
     """Main page with tab-based interface."""
@@ -55,10 +77,17 @@ def index():
 @app.route('/api/participants', methods=['GET', 'POST'])
 def participants():
     """Handle participant CRUD operations."""
+    user = get_current_user()
+    
     if request.method == 'GET':
         from models import MatchResult
 
-        participants = Participant.query.all()
+        # All logged-in users can see all participants
+        if user:
+            participants = Participant.query.all()
+        else:
+            participants = []
+
         result = []
         for p in participants:
             # Calculate totals from MatchResult for this participant
@@ -81,9 +110,12 @@ def participants():
 
     elif request.method == 'POST':
         # Require login for adding participants
-        user = get_current_user()
         if not user:
             return jsonify({'error': 'Login required'}), 401
+
+        # Only admins can add participants
+        if not user.is_admin:
+            return jsonify({'error': 'Admin access required'}), 403
 
         data = request.get_json()
         name = data.get('name')
@@ -162,6 +194,21 @@ def record_match():
 
     # Check if results already exist (editing vs recording)
     match = Match.query.get(match_id)
+
+    # For non-admin users, verify they only modify their own results
+    if not user.is_admin and match:
+        # Check if any result being modified belongs to this user's participant
+        user_participant_id = user.participant_id
+        if user_participant_id:
+            # Check if any of the players in this match belong to the current user
+            players_in_match = [match.player1_id, match.player2_id, match.player3_id, match.player4_id]
+            if user_participant_id not in players_in_match:
+                return jsonify({'error': 'Access denied - this match does not involve your participant'}), 403
+            # Also verify results only contain their own player data
+            for result in results:
+                if result.get('player_id') and result['player_id'] != user_participant_id:
+                    return jsonify({'error': 'Access denied - you can only modify your own results'}), 403
+
     if match and match.result_json is not None:
         # Update existing results
         _, error = swiss.update_match_results(match_id, results)
@@ -275,12 +322,9 @@ def get_rounds():
 
 
 @app.route('/api/players/<int:participant_id>/matches', methods=['GET'])
+@user_participant_required
 def get_player_matches(participant_id):
     """Get all matches for a specific player across all rounds."""
-    user = get_current_user()
-    if not user:
-        return jsonify({'error': 'Login required'}), 401
-
     participant = Participant.query.get(participant_id)
     if not participant:
         return jsonify({'error': 'Participant not found'}), 404
@@ -377,12 +421,9 @@ def get_player_matches(participant_id):
 
 
 @app.route('/api/players/<int:participant_id>/round/<int:round_id>/match', methods=['POST'])
+@user_participant_required
 def update_player_match(participant_id, round_id):
     """Update or create match result for a player in a specific round."""
-    user = get_current_user()
-    if not user:
-        return jsonify({'error': 'Login required'}), 401
-
     participant = Participant.query.get(participant_id)
     if not participant:
         return jsonify({'error': 'Participant not found'}), 404
@@ -533,6 +574,48 @@ def login():
     return jsonify({
         'authenticated': False,
         'message': 'Use POST to login'
+    })
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    """Registration page and endpoint."""
+    if request.method == 'POST':
+        data = request.get_json()
+        username = data.get('username')
+        password = data.get('password')
+
+        if not username or not password:
+            return jsonify({'error': 'Username and password required'}), 400
+
+        # Check if user already exists
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            return jsonify({'error': 'Username already exists'}), 409
+
+        # Create the user
+        user = User(username=username)
+        user.set_password(password)
+        user.is_admin = False
+        
+        db.session.add(user)
+        db.session.commit()
+
+        # Create a participant with the same name as the username
+        participant = Participant(name=username)
+        db.session.add(participant)
+        db.session.flush()  # Get the participant ID
+        
+        # Link the participant to the user
+        user.participant_id = participant.id
+        db.session.commit()
+
+        return jsonify({'message': 'Registration successful', 'user_id': user.id})
+
+    # For GET request, return registration page (or info if using SPA)
+    return jsonify({
+        'authenticated': False,
+        'message': 'Use POST to register'
     })
 
 
