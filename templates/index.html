@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pokemon Za トーナメントマネージャー</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1> Pokemon Za トーナメントマネージャー</h1>
+            <nav class="tabs">
+                <button class="tab-btn active" data-tab="participants">参加者</button>
+                <button class="tab-btn" data-tab="matches">試合</button>
+                <button class="tab-btn" data-tab="standings">順位</button>
+            </nav>
+        </header>
+
+        <main>
+            <!-- Participants Tab -->
+            <div id="participants" class="tab-content active">
+                <div class="section-header">
+                    <h2>参加者管理</h2>
+                    <form id="add-participant-form">
+                        <input type="text" id="participant-name" placeholder="プレイヤー名" required>
+                        <button type="submit" class="btn-primary">参加者を追加</button>
+                    </form>
+                </div>
+                <div class="table-container">
+                    <table id="participants-table">
+                        <thead>
+                            <tr>
+                                <th>名前</th>
+                                <th>勝利</th>
+                                <th>敗北</th>
+                                <th>引分</th>
+                                <th>ポイント</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="participants-body">
+                            <!-- JSで表示 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Matches Tab -->
+            <div id="matches" class="tab-content">
+                <div class="section-header">
+                    <h2>試合管理</h2>
+                    <button id="generate-matches-btn" class="btn-primary">次のラウンドを生成</button>
+                </div>
+
+                <!-- 過去のラウンド選択 -->
+                <div class="round-selector">
+                    <label>ラウンドを選択:</label>
+                    <select id="round-select">
+                        <option value="">-- 選択してください --</option>
+                    </select>
+                </div>
+
+                <div id="matches-container">
+                    <!-- 試合テーブルがJSで表示 -->
+                </div>
+
+                <div id="match-results-form" class="hidden">
+                    <h3 id="match-form-title">結果を記録</h3>
+                    <div id="match-results-container">
+                        <!-- 結果入力フォームがJSで表示 -->
+                    </div>
+                    <button id="submit-results-btn" class="btn-primary">結果を提出</button>
+                    <button id="cancel-edit-btn" class="btn-secondary">キャンセル</button>
+                </div>
+            </div>
+
+            <!-- Standings Tab -->
+            <div id="standings" class="tab-content">
+                <div class="section-header">
+                    <h2>現在の順位</h2>
+                    <button id="refresh-standings-btn" class="btn-secondary">更新</button>
+                </div>
+                <div class="table-container">
+                    <table id="standings-table">
+                        <thead>
+                            <tr>
+                                <th>順位</th>
+                                <th>名前</th>
+                                <th>勝利</th>
+                                <th>敗北</th>
+                                <th>引分</th>
+                                <th>ポイント</th>
+                            </tr>
+                        </thead>
+                        <tbody id="standings-body">
+                            <!-- JSで表示 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <button id="clear-data-btn" class="btn-danger">全データをクリア</button>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
