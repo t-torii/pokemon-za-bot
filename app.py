@@ -78,13 +78,14 @@ def index():
 def participants():
     """Handle participant CRUD operations."""
     user = get_current_user()
-    
+
     if request.method == 'GET':
         from models import MatchResult
 
-        # All logged-in users can see all participants
+        # All logged-in users can see participants of approved users only
         if user:
-            participants = Participant.query.all()
+            # Get participants that are linked to approved users
+            participants = Participant.query.join(User).filter(User.is_approved == True).all()
         else:
             participants = []
 
@@ -125,6 +126,16 @@ def participants():
 
         participant = Participant(name=name)
         db.session.add(participant)
+        db.session.flush()  # Get the participant ID
+
+        # Create an associated approved user
+        new_user = User(username=name)
+        new_user.set_password(name.lower().replace(' ', '') + '123')  # Default password
+        new_user.is_admin = False
+        new_user.is_approved = True  # Admin-added users are auto-approved
+        new_user.participant_id = participant.id
+        db.session.add(new_user)
+
         db.session.commit()
 
         return jsonify(participant.to_dict()), 201
@@ -289,6 +300,11 @@ def get_standings():
 
     standings = []
     for i, p in enumerate(participants, 1):
+        # Check if participant is linked to an approved user
+        user = User.query.filter_by(participant_id=p.id).first()
+        if user and not user.is_approved:
+            continue
+
         # Calculate totals from MatchResult for this participant
         stats = db.session.query(
             db.func.coalesce(db.func.sum(MatchResult.win), 0).label('total_win'),
@@ -298,7 +314,7 @@ def get_standings():
         ).filter(MatchResult.player_id == p.id).first()
 
         standings.append({
-            'rank': i,
+            'rank': len(standings) + 1,
             'id': p.id,
             'name': p.name,
             'wins': stats.total_win,
@@ -328,6 +344,11 @@ def get_player_matches(participant_id):
     participant = Participant.query.get(participant_id)
     if not participant:
         return jsonify({'error': 'Participant not found'}), 404
+
+    # Check if participant is linked to an approved user
+    user = User.query.filter_by(participant_id=participant_id).first()
+    if user and not user.is_approved:
+        return jsonify({'error': 'Participant not approved'}), 403
 
     matches = Match.query.filter(
         (Match.player1_id == participant_id) |
@@ -527,24 +548,28 @@ with app.app_context():
     guest_user = User.query.filter_by(username='guest').first()
 
     if admin_user is None:
-        # Admin user (full access)
+        # Admin user (full access, auto-approved)
         admin_user = User(username='admin')
         admin_user.set_password('admin123')
         admin_user.is_admin = True
+        admin_user.is_approved = True
         db.session.add(admin_user)
 
     if guest_user is None:
-        # Guest user (view-only access)
+        # Guest user (view-only access, auto-approved)
         guest_user = User(username='guest')
         guest_user.set_password('guest123')
         guest_user.is_admin = False
+        guest_user.is_approved = True
         db.session.add(guest_user)
 
     # Ensure permissions are set correctly
     if admin_user:
         admin_user.is_admin = True
+        admin_user.is_approved = True
     if guest_user:
         guest_user.is_admin = False
+        guest_user.is_approved = True
         # Update password for guest if it was reset
         if not guest_user.password_hash.startswith('pbkdf2:sha256'):
             guest_user.set_password('guest123')
@@ -565,6 +590,8 @@ def login():
 
         user = User.query.filter_by(username=username).first()
         if user and user.check_password(password):
+            if not user.is_approved:
+                return jsonify({'error': 'Account not approved by admin yet'}), 403
             session['user_id'] = user.id
             return jsonify({'message': 'Login successful'})
 
@@ -597,6 +624,7 @@ def register():
         user = User(username=username)
         user.set_password(password)
         user.is_admin = False
+        user.is_approved = False  # Needs admin approval
         
         db.session.add(user)
         db.session.commit()
@@ -633,6 +661,63 @@ def get_current_user_info():
     if user:
         return jsonify(user.to_dict())
     return jsonify({'error': 'Not authenticated'}), 401
+
+
+@app.route('/api/users', methods=['GET'])
+@admin_required
+def get_users():
+    """Get all users (admin only)."""
+    users = User.query.all()
+    return jsonify([{
+        'id': u.id,
+        'username': u.username,
+        'is_admin': u.is_admin,
+        'is_approved': u.is_approved,
+        'participant_id': u.participant_id
+    } for u in users])
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@admin_required
+def delete_user(user_id):
+    """Delete a user (admin only)."""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': 'User deleted'})
+
+
+@app.route('/api/users/<int:user_id>/admin', methods=['POST'])
+@admin_required
+def toggle_admin(user_id):
+    """Toggle admin status for a user."""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    # Prevent removing admin status from yourself
+    if user_id == get_current_user().id:
+        return jsonify({'error': 'Cannot change your own admin status'}), 400
+
+    user.is_admin = not user.is_admin
+    db.session.commit()
+    return jsonify({'message': f"User {'promoted to' if user.is_admin else 'demoted from'} admin"})
+
+
+@app.route('/api/users/<int:user_id>/approve', methods=['POST'])
+@admin_required
+def approve_user(user_id):
+    """Approve a user for login."""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    user.is_approved = True
+    db.session.commit()
+    return jsonify({'message': 'User approved'})
 
 
 if __name__ == '__main__':

@@ -45,6 +45,7 @@
                 <button class="tab-btn active" data-tab="participants">参加者</button>
                 <button class="tab-btn" data-tab="matches">試合</button>
                 <button class="tab-btn" data-tab="standings">順位</button>
+                <button class="tab-btn" data-tab="users" id="users-tab" style="display: none;">アカウント管理</button>
             </nav>
         </header>
 
@@ -175,6 +176,28 @@
                 </div>
             </div>
         </main>
+
+        <!-- Account Management Tab (Admin only) -->
+        <div id="users" class="tab-content">
+            <div class="section-header">
+                <h2>アカウント管理</h2>
+            </div>
+            <div class="table-container">
+                <table id="users-table">
+                    <thead>
+                        <tr>
+                            <th>ユーザー名</th>
+                            <th>管理者</th>
+                            <th>紐づいた参加者</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-body">
+                        <!-- JSで表示 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
 
         <footer>
             <button id="clear-data-btn" class="btn-danger">全データをクリア</button>

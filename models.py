@@ -11,6 +11,7 @@ class User(db.Model):
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     is_admin = db.Column(db.Boolean, default=False)
+    is_approved = db.Column(db.Boolean, default=False)  # Admin approval required for login
     participant_id = db.Column(db.Integer, db.ForeignKey('participants.id'), nullable=True)
 
     def set_password(self, password):
@@ -25,6 +26,7 @@ class User(db.Model):
             'id': self.id,
             'username': self.username,
             'is_admin': self.is_admin,
+            'is_approved': self.is_approved,
             'participant_id': self.participant_id
         }
 

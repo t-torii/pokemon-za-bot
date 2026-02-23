@@ -779,3 +779,55 @@ footer button {
         width: 100%;
     }
 }
+
+/* アカウント管理 */
+.user-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-start;
+}
+
+.user-actions button {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+    transition: background 0.2s;
+}
+
+.user-actions button.btn-promote {
+    background: #ecc94b;
+    color: #744210;
+}
+
+.user-actions button.btn-promote:hover {
+    background: #e2b736;
+}
+
+.user-actions button.btn-demote {
+    background: #ed8936;
+    color: white;
+}
+
+.user-actions button.btn-demote:hover {
+    background: #dd6b20;
+}
+
+.user-actions button.btn-delete {
+    background: #fc8181;
+    color: white;
+}
+
+.user-actions button.btn-delete:hover {
+    background: #f56565;
+}
+
+.user-actions button.btn-approve {
+    background: #48bb78;
+    color: white;
+}
+
+.user-actions button.btn-approve:hover {
+    background: #38a169;
+}

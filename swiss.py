@@ -2,16 +2,17 @@
 
 from collections import defaultdict
 from itertools import combinations
-from models import Participant, Match, Round, MatchResult, db
+from models import Participant, Match, Round, MatchResult, User, db
 
 
 def get_standings():
     """Get participants sorted by wins (desc), then points (desc).
-    Calculates totals across all rounds from MatchResult table."""
+    Calculates totals across all rounds from MatchResult table.
+    Only includes participants linked to approved users."""
     from models import MatchResult
 
-    # Get all participants
-    participants = Participant.query.all()
+    # Get participants linked to approved users
+    participants = Participant.query.join(User).filter(User.is_approved == True).all()
 
     # Calculate totals from MatchResult for each participant
     participants_with_stats = []

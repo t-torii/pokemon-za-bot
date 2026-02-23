@@ -7,6 +7,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     // 現在のユーザーをチェック
     await checkUserSession();
 
+    // アカウント管理タブの表示制御（管理者のみ表示）
+    if (currentUser && currentUser.is_admin) {
+        const usersTab = document.getElementById('users-tab');
+        if (usersTab) {
+            usersTab.style.display = 'block';
+        }
+        // 初期タブを参加者に設定
+        document.querySelector('[data-tab="participants"]').classList.add('active');
+        document.getElementById('participants').classList.add('active');
+    } else if (currentUser) {
+        // 非管理者にはアカウント管理タブを隠す
+        const usersTab = document.getElementById('users-tab');
+        if (usersTab) {
+            usersTab.style.display = 'none';
+        }
+    }
+
     // タブナビゲーション
     const tabBtns = document.querySelectorAll('.tab-btn');
     const tabContents = document.querySelectorAll('.tab-content');
@@ -34,6 +51,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                 refreshMatches();
             } else if (tabName === 'participants') {
                 loadParticipantList();
+            } else if (tabName === 'users') {
+                loadUsers();
             }
         });
     });
@@ -82,7 +101,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     refreshStandings();
     loadRoundSelect();
 
-    // ログアウトボタン
+    // 管理者なら参加者キャッシュを読み込み
+    if (currentUser && currentUser.is_admin) {
+        loadParticipantsCache();
+    }
     const logoutBtn = document.getElementById('logout-btn');
     if (logoutBtn) {
         logoutBtn.addEventListener('click', handleLogout);
@@ -95,7 +117,22 @@ document.addEventListener('DOMContentLoaded', async () => {
             userName.textContent = currentUser.username;
         }
     }
+
+    // 初期データ読み込み（タブがアクティブな場合）
+    if (currentUser && currentUser.is_admin) {
+        // 管理者はアカウント管理タブを表示しない（デフォルトで参加者タブ）
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelector('[data-tab="participants"]').classList.add('active');
+        document.getElementById('participants').classList.add('active');
+    }
+
+    // 参加者キャッシュを読み込み
+    await loadParticipantsCache();
 });
+
+// 参加者キャッシュ
+let participantsCache = [];
 
 // セッションチェック
 async function checkUserSession() {
@@ -118,6 +155,24 @@ async function checkUserSession() {
     } catch (error) {
         console.error('セッションチェックエラー:', error);
     }
+}
+
+// 全参加者をキャッシュ
+async function loadParticipantsCache() {
+    try {
+        const response = await fetch('/api/participants');
+        if (response.ok) {
+            participantsCache = await response.json();
+        }
+    } catch (error) {
+        console.error('参加者キャッシュ読み込みエラー:', error);
+    }
+}
+
+// ユーザー名から参加者名を取得
+function getParticipantName(participantId) {
+    const participant = participantsCache.find(p => p.id === participantId);
+    return participant ? participant.name : `参加者#${participantId}`;
 }
 
 // ログアウト
@@ -913,6 +968,142 @@ async function clearAllData() {
         console.error('データクリアエラー:', error);
         alert('エラー: ' + error.message);
     }
+}
+
+// アカウント管理機能
+async function loadUsers() {
+    // 参加者キャッシュを更新
+    await loadParticipantsCache();
+
+    try {
+        const response = await fetch('/api/users');
+        const users = await response.json();
+        usersCache = users; // キャッシュに保存
+
+        const tbody = document.getElementById('users-body');
+
+        if (users.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; padding: 20px;">アカウントがありません</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = users.map(u => `
+            <tr class="user-row" data-user-id="${u.id}">
+                <td>${escapeHtml(u.username)}</td>
+                <td>${u.is_admin ? '<span style="color: #48bb78;">はい</span>' : 'いいえ'}</td>
+                <td>${u.is_approved ? '<span style="color: #48bb78;">承認済み</span>' : '<span style="color: #e53e3e;">未承認</span>'}</td>
+                <td>${u.participant_id ? `<a href="#" onclick="viewParticipant(${u.participant_id}); return false;">${escapeHtml(getParticipantName(u.participant_id))}</a>` : 'なし'}</td>
+                <td>
+                    <div class="user-actions">
+                        ${!u.is_approved ? `<button class="btn-approve" onclick="approveUser(${u.id})">承認する</button>` : ''}
+                        ${u.id !== currentUser.id ? `<button class="btn-delete" onclick="deleteUser(${u.id})">削除</button>` : ''}
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    } catch (error) {
+        console.error('ユーザー読み込みエラー:', error);
+        alert('ユーザーの読み込みに失敗しました');
+    }
+}
+
+async function deleteUser(id) {
+    if (!confirm('このアカウントを削除しますか？')) return;
+
+    try {
+        const response = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+
+        if (response.ok) {
+            loadUsers();
+        } else if (response.status === 401) {
+            alert('ログインが必要です');
+            window.location.href = '/';
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.error || 'アカウントの削除に失敗しました'));
+        }
+    } catch (error) {
+        console.error('アカウント削除エラー:', error);
+        alert('エラー: ' + error.message);
+    }
+}
+
+async function approveUser(id) {
+    if (!confirm('このユーザーのアカウントを承認しますか？承認後、ユーザーはログインできるようになります。')) return;
+
+    try {
+        const response = await fetch(`/api/users/${id}/approve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+            loadUsers();
+        } else if (response.status === 401) {
+            alert('ログインが必要です');
+            window.location.href = '/';
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.error || '承認に失敗しました'));
+        }
+    } catch (error) {
+        console.error('承認エラー:', error);
+        alert('エラー: ' + error.message);
+    }
+}
+
+async function toggleAdmin(id) {
+    const user = usersCache.find(u => u.id === id);
+    if (!user) return;
+
+    const action = user.is_admin ? '管理者から外します' : '管理者に昇格させます';
+    if (!confirm(`${escapeHtml(user.username)} を${action}。よろしいですか？`)) return;
+
+    try {
+        const response = await fetch(`/api/users/${id}/admin`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+            loadUsers();
+        } else if (response.status === 401) {
+            alert('ログインが必要です');
+            window.location.href = '/';
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.error || '操作に失敗しました'));
+        }
+    } catch (error) {
+        console.error('管理者変更エラー:', error);
+        alert('エラー: ' + error.message);
+    }
+}
+
+// ユーザー名から参加者名を取得（キャッシュ付き）
+let usersCache = [];
+function getParticipantName(participantId) {
+    // ここで簡易的にユーザー名を返す（実際にはParticipantテーブルから取得すべき）
+    const user = usersCache.find(u => u.id === participantId);
+    return user ? user.username : `参加者#${participantId}`;
+}
+
+function viewParticipant(participantId) {
+    // 参加者タブに切り替えて該当参加者を表示
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+    document.querySelector('[data-tab="participants"]').classList.add('active');
+    document.getElementById('participants').classList.add('active');
+
+    // 参加者セクションで該当行を強調表示
+    setTimeout(() => {
+        const row = document.querySelector(`.participant-row[data-participant-id="${participantId}"]`);
+        if (row) {
+            row.classList.add('highlighted');
+            row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, 100);
 }
 
 function escapeHtml(text) {
