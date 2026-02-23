@@ -992,7 +992,6 @@ async function loadUsers() {
                 <td>${escapeHtml(u.username)}</td>
                 <td>${u.is_admin ? '<span style="color: #48bb78;">はい</span>' : 'いいえ'}</td>
                 <td>${u.is_approved ? '<span style="color: #48bb78;">承認済み</span>' : '<span style="color: #e53e3e;">未承認</span>'}</td>
-                <td>${u.participant_id ? `<a href="#" onclick="viewParticipant(${u.participant_id}); return false;">${escapeHtml(getParticipantName(u.participant_id))}</a>` : 'なし'}</td>
                 <td>
                     <div class="user-actions">
                         ${!u.is_approved ? `<button class="btn-approve" onclick="approveUser(${u.id})">承認する</button>` : ''}

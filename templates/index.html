@@ -31,6 +31,15 @@
         .btn-logout:hover {
             background: #c0392b;
         }
+        /* 全データクリアボタン - 小さく右寄せ */
+        .clear-data-container {
+            text-align: right;
+            margin-top: 10px;
+        }
+        .clear-data-btn {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+        }
     </style>
 </head>
 <body>
@@ -188,7 +197,7 @@
                         <tr>
                             <th>ユーザー名</th>
                             <th>管理者</th>
-                            <th>紐づいた参加者</th>
+                            <th>承認ステータス</th>
                             <th>操作</th>
                         </tr>
                     </thead>
@@ -199,12 +208,10 @@
             </div>
         </div>
 
-        <footer>
-            <button id="clear-data-btn" class="btn-danger">全データをクリア</button>
-            <div style="margin-top: 10px; font-size: 0.8rem; color: #666; text-align: center;">
-                ログアウトして新規登録を行ってください
-            </div>
-        </footer>
+        <!-- 全データクリアボタン - 右寄せ、小さく -->
+        <div class="clear-data-container">
+            <button id="clear-data-btn" class="btn-danger clear-data-btn">全データをクリア</button>
+        </div>
     </div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>

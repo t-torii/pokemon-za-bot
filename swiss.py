@@ -201,14 +201,15 @@ def generate_swiss_matches(round_number):
             paired.add(pid)
         table_number += 1
     elif len(unpaired_all) == 1:
-        # Add to last match if possible
-        if matches:
-            matches[-1]['player_ids'].append(unpaired_all[0])
-        else:
-            matches.append({
-                'table_number': table_number,
-                'player_ids': unpaired_all
-            })
+        # Create a table with the remaining player + 3 BYEs
+        # BYE is represented by a special negative ID (using -1, -2, -3 for display)
+        matches.append({
+            'table_number': table_number,
+            'player_ids': unpaired_all + [-1, -2, -3]  # Add 3 BYEs
+        })
+        for pid in unpaired_all:
+            paired.add(pid)
+        table_number += 1
 
     return matches
 
@@ -218,13 +219,17 @@ def save_matches_to_db(matches, round_id):
     for match_data in matches:
         player_ids = match_data['player_ids']
 
+        # Filter out BYE entries (negative IDs) for database storage
+        # Only real players (positive IDs) are stored in DB
+        real_player_ids = [pid for pid in player_ids if pid > 0]
+
         match = Match(
             round_id=round_id,
             table_number=match_data['table_number'],
-            player1_id=player_ids[0] if len(player_ids) > 0 else None,
-            player2_id=player_ids[1] if len(player_ids) > 1 else None,
-            player3_id=player_ids[2] if len(player_ids) > 2 else None,
-            player4_id=player_ids[3] if len(player_ids) > 3 else None
+            player1_id=real_player_ids[0] if len(real_player_ids) > 0 else None,
+            player2_id=real_player_ids[1] if len(real_player_ids) > 1 else None,
+            player3_id=real_player_ids[2] if len(real_player_ids) > 2 else None,
+            player4_id=real_player_ids[3] if len(real_player_ids) > 3 else None
         )
         db.session.add(match)
 
@@ -263,19 +268,23 @@ def get_match_with_results(match_id):
     for attr_name, player_id in [('player1', match.player1_id), ('player2', match.player2_id),
                                   ('player3', match.player3_id), ('player4', match.player4_id)]:
         if player_id:
-            p = Participant.query.get(player_id)
-            players.append({'id': p.id, 'name': p.name} if p else {'id': None, 'name': 'TBD'})
+            if player_id < 0:
+                # BYE player
+                players.append({'id': player_id, 'name': 'BYE'})
+            else:
+                p = Participant.query.get(player_id)
+                players.append({'id': p.id, 'name': p.name} if p else {'id': None, 'name': 'TBD'})
 
-            # Get match result for this player
-            result = MatchResult.query.filter_by(match_id=match_id, player_id=player_id).first()
-            if result:
-                result_data.append({
-                    'player_id': player_id,
-                    'win': result.win,
-                    'loss': result.loss,
-                    'draw': result.draw,
-                    'points': result.points
-                })
+                # Get match result for this player
+                result = MatchResult.query.filter_by(match_id=match_id, player_id=player_id).first()
+                if result:
+                    result_data.append({
+                        'player_id': player_id,
+                        'win': result.win,
+                        'loss': result.loss,
+                        'draw': result.draw,
+                        'points': result.points
+                    })
 
     return {
         'id': match.id,
@@ -293,9 +302,9 @@ def process_match_results(match_id, results):
     if not match:
         return None, "Match not found"
 
-    # Get all player IDs involved in this match
+    # Get all player IDs involved in this match (exclude BYE which has negative IDs)
     player_ids = [match.player1_id, match.player2_id, match.player3_id, match.player4_id]
-    player_ids = [p for p in player_ids if p is not None]
+    player_ids = [p for p in player_ids if p is not None and p > 0]
 
     # Save match results to MatchResult table
     for player_id in player_ids:
@@ -328,9 +337,9 @@ def update_match_results(match_id, results):
     # Delete existing results
     MatchResult.query.filter_by(match_id=match_id).delete()
 
-    # Get all player IDs involved in this match
+    # Get all player IDs involved in this match (exclude BYE which has negative IDs)
     player_ids = [match.player1_id, match.player2_id, match.player3_id, match.player4_id]
-    player_ids = [p for p in player_ids if p is not None]
+    player_ids = [p for p in player_ids if p is not None and p > 0]
 
     # Save updated match results to MatchResult table
     for player_id in player_ids:

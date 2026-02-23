@@ -153,6 +153,11 @@ header h1 {
     background: #c53030;
 }
 
+.btn-small {
+    padding: 6px 12px;
+    font-size: 0.85rem;
+}
+
 .btn-delete {
     background: #fc8181;
     color: white;
