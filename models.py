@@ -1,5 +1,6 @@
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+import datetime
 
 db = SQLAlchemy()
 
@@ -13,6 +14,10 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_approved = db.Column(db.Boolean, default=False)  # Admin approval required for login
     participant_id = db.Column(db.Integer, db.ForeignKey('participants.id'), nullable=True)
+
+    # Password reset fields
+    reset_password = db.Column(db.String(6), nullable=True)
+    reset_password_expires = db.Column(db.DateTime, nullable=True)
 
     def set_password(self, password):
         # scryptはmacOSのPython 3.9で利用できない場合があるため、pbkdf2:sha256を使用
@@ -29,6 +34,15 @@ class User(db.Model):
             'is_approved': self.is_approved,
             'participant_id': self.participant_id
         }
+
+    def generate_reset_password(self):
+        """Generate a random 6-character reset password."""
+        import random
+        import string
+        characters = string.ascii_letters + string.digits
+        self.reset_password = ''.join(random.choices(characters, k=6))
+        self.reset_password_expires = datetime.datetime.now() + datetime.timedelta(hours=24)
+        return self.reset_password
 
 
 class Participant(db.Model):

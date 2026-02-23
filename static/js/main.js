@@ -995,6 +995,7 @@ async function loadUsers() {
                 <td>
                     <div class="user-actions">
                         ${!u.is_approved ? `<button class="btn-approve" onclick="approveUser(${u.id})">承認する</button>` : ''}
+                        ${u.reset_password ? `<button class="btn-reset-password" onclick="resetPassword(${u.id})">パスワード初期化</button>` : ''}
                         ${u.id !== currentUser.id ? `<button class="btn-delete" onclick="deleteUser(${u.id})">削除</button>` : ''}
                     </div>
                 </td>
@@ -1048,6 +1049,61 @@ async function approveUser(id) {
     } catch (error) {
         console.error('承認エラー:', error);
         alert('エラー: ' + error.message);
+    }
+}
+
+async function resetPassword(id) {
+    if (!confirm('このユーザーのパスワードを初期化しますか？')) return;
+
+    try {
+        const response = await fetch(`/api/users/${id}/reset_password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            // Show password in a text input for copying
+            const newPass = data.new_password;
+            const container = document.createElement('div');
+            container.innerHTML = `
+                <div style="text-align: left; margin-bottom: 15px;">
+                    <p style="margin-bottom: 10px;"><strong>初期化されたパスワード:</strong></p>
+                    <input type="text" value="${newPass}" id="reset-password-display" style="width: 100%; padding: 10px; font-size: 16px; text-align: center;" readonly onclick="this.select()">
+                    <p style="margin-top: 10px; font-size: 12px; color: #666;">パスワードをコピーしてユーザーに安全な方法で伝えてください</p>
+                </div>
+            `;
+            container.querySelector('input').select();
+
+            // Use a custom modal-style alert
+            const alertDiv = document.createElement('div');
+            alertDiv.id = 'reset-password-modal';
+            alertDiv.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); z-index: 1000; max-width: 400px; width: 90%;';
+            alertDiv.innerHTML = `
+                <h3 style="margin-top: 0; text-align: center;">パスワード初期化完了</h3>
+                ${container.innerHTML}
+                <div style="text-align: center;">
+                    <button onclick="closeResetPasswordModal()" style="padding: 8px 20px; background: #667eea; color: white; border: none; border-radius: 4px; cursor: pointer;">閉じる</button>
+                </div>
+            `;
+            document.body.appendChild(alertDiv);
+
+            loadUsers();
+        } else {
+            const error = data;
+            alert('エラー: ' + (error.error || 'パスワードの初期化に失敗しました'));
+        }
+    } catch (error) {
+        console.error('パスワード初期化エラー:', error);
+        alert('エラー: ' + error.message);
+    }
+}
+
+function closeResetPasswordModal() {
+    const modal = document.getElementById('reset-password-modal');
+    if (modal) {
+        modal.remove();
     }
 }
 

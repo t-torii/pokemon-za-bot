@@ -702,7 +702,8 @@ def get_users():
         'username': u.username,
         'is_admin': u.is_admin,
         'is_approved': u.is_approved,
-        'participant_id': u.participant_id
+        'participant_id': u.participant_id,
+        'reset_password': u.reset_password is not None
     } for u in users])
 
 
@@ -747,6 +748,68 @@ def approve_user(user_id):
     user.is_approved = True
     db.session.commit()
     return jsonify({'message': 'User approved'})
+
+
+@app.route('/reset_password_request', methods=['GET'])
+def reset_password_request_page():
+    """Show password reset request page."""
+    return render_template('reset_password_request.html')
+
+
+@app.route('/api/reset_password_request', methods=['POST'])
+def reset_password_request_api():
+    """Initiate password reset for a user. This endpoint is public but requires admin approval."""
+    data = request.get_json()
+    username = data.get('username')
+
+    if not username:
+        return jsonify({'error': 'Username is required'}), 400
+
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    # Generate a new random password
+    new_password = user.generate_reset_password()
+    db.session.commit()
+
+    # Store the new password in session for display to admin
+    session['reset_password'] = new_password
+    session['reset_user_id'] = user.id
+
+    return jsonify({
+        'message': 'Password reset requested successfully',
+        'username': user.username
+    })
+
+
+@app.route('/api/users/<int:user_id>/reset_password', methods=['POST'])
+def reset_password(user_id):
+    """Reset password for a user."""
+    # Check if reset password is in session (either admin or the user themselves)
+    reset_password = session.get('reset_password')
+
+    if not reset_password:
+        return jsonify({'error': 'No reset password found. Please request reset first.'}), 400
+
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    # Set the new password for the user
+    user.set_password(reset_password)
+    # Clear the reset password fields
+    user.reset_password = None
+    user.reset_password_expires = None
+    # Clear session
+    session.pop('reset_password', None)
+    session.pop('reset_user_id', None)
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Password reset completed',
+        'new_password': reset_password
+    })
 
 
 if __name__ == '__main__':
