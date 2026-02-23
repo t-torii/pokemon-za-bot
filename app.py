@@ -663,6 +663,35 @@ def get_current_user_info():
     return jsonify({'error': 'Not authenticated'}), 401
 
 
+@app.route('/api/change_password', methods=['POST'])
+@login_required
+def change_password():
+    """Change password for the current user."""
+    data = request.get_json()
+    current_password = data.get('current_password')
+    new_password = data.get('new_password')
+
+    if not current_password or not new_password:
+        return jsonify({'error': 'Both passwords are required'}), 400
+
+    user = get_current_user()
+    if not user.check_password(current_password):
+        return jsonify({'error': 'Current password is incorrect'}), 401
+
+    user.set_password(new_password)
+    db.session.commit()
+
+    return jsonify({'message': 'Password changed successfully'})
+
+
+@app.route('/change_password', methods=['GET'])
+def change_password_page():
+    """Show password change page."""
+    if not get_current_user():
+        return redirect(url_for('index'))
+    return render_template('change_password.html')
+
+
 @app.route('/api/users', methods=['GET'])
 @admin_required
 def get_users():
