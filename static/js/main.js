@@ -774,6 +774,14 @@ async function editPlayerMatch(matchId, roundId, tableNumber) {
         const form = document.getElementById('player-match-form');
         const container = document.getElementById('player-match-form-container');
 
+        // 既存の結果を取得
+        const existingResults = {};
+        if (match.results) {
+            match.results.forEach(r => {
+                existingResults[r.player_id] = r;
+            });
+        }
+
         currentMatchResults[matchId] = match.players;
 
         // テーブル番号とラウンドIDをデータ属性に保存
@@ -786,14 +794,14 @@ async function editPlayerMatch(matchId, roundId, tableNumber) {
                             <label>
                                 結果:
                                 <select class="player-result-select" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
-                                    <option value="win">勝ち</option>
-                                    <option value="lose" selected>負け</option>
-                                    <option value="draw">引き分け</option>
+                                    <option value="win" ${existingResults[p.id]?.win === 1 ? 'selected' : ''}>勝ち</option>
+                                    <option value="lose" ${existingResults[p.id]?.loss === 1 ? 'selected' : ''}>負け</option>
+                                    <option value="draw" ${existingResults[p.id]?.draw === 1 ? 'selected' : ''}>引き分け</option>
                                 </select>
                             </label>
                             <label>
                                 ポイント:
-                                <input type="number" min="0" value="0" class="player-points-input" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
+                                <input type="number" min="0" value="${existingResults[p.id]?.points || 0}" class="player-points-input" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                             </label>
                         </div>
                     </div>
