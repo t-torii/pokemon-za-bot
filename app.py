@@ -249,6 +249,98 @@ def get_match(match_id):
     return jsonify(match_data)
 
 
+@app.route('/api/matches/<int:match_id>/swap', methods=['POST'])
+@admin_required
+def swap_match_players(match_id):
+    """Swap two players in a match."""
+    match = Match.query.get(match_id)
+    if not match:
+        return jsonify({'error': 'Match not found'}), 404
+
+    data = request.get_json()
+    slot1 = data.get('slot1')
+    slot2 = data.get('slot2')
+
+    if slot1 is None or slot2 is None:
+        return jsonify({'error': 'Both slot1 and slot2 are required'}), 400
+
+    # Validate slots
+    if slot1 < 0 or slot1 > 3 or slot2 < 0 or slot2 > 3:
+        return jsonify({'error': 'Invalid slot number'}), 400
+
+    if slot1 == slot2:
+        return jsonify({'error': 'Cannot swap same slot'}), 400
+
+    # Get player IDs for each slot
+    slot_map = {
+        0: 'player1_id',
+        1: 'player2_id',
+        2: 'player3_id',
+        3: 'player4_id'
+    }
+
+    # Check if match has results (swiss.pyでresult_jsonがNoneのときに結果未記録と判定)
+    if match.result_json is not None:
+        return jsonify({'error': 'Results have been recorded. Cannot modify pairings.'}), 400
+
+    # Get player IDs
+    player1_id = getattr(match, slot_map[slot1])
+    player2_id = getattr(match, slot_map[slot2])
+
+    # If one slot is empty, just move the player to the other slot
+    if player1_id is None:
+        setattr(match, slot_map[slot1], player2_id)
+        setattr(match, slot_map[slot2], None)
+    elif player2_id is None:
+        setattr(match, slot_map[slot1], player1_id)
+        setattr(match, slot_map[slot2], None)
+    else:
+        # Swap player IDs
+        setattr(match, slot_map[slot1], player2_id)
+        setattr(match, slot_map[slot2], player1_id)
+
+    db.session.commit()
+
+    return jsonify({'message': 'Players swapped successfully'})
+
+
+@app.route('/api/matches/<int:match_id>/update', methods=['POST'])
+@admin_required
+def update_match_player(match_id):
+    """Update a specific player slot in a match."""
+    match = Match.query.get(match_id)
+    if not match:
+        return jsonify({'error': 'Match not found'}), 404
+
+    data = request.get_json()
+    slot = data.get('slot')
+    player_id = data.get('player_id')
+
+    if slot is None:
+        return jsonify({'error': 'Slot is required'}), 400
+
+    # Validate slot
+    if slot < 0 or slot > 3:
+        return jsonify({'error': 'Invalid slot number'}), 400
+
+    # Check if match has results
+    if match.result_json is not None:
+        return jsonify({'error': 'Results have been recorded. Cannot modify pairings.'}), 400
+
+    # Update player ID
+    slot_map = {
+        0: 'player1_id',
+        1: 'player2_id',
+        2: 'player3_id',
+        3: 'player4_id'
+    }
+
+    setattr(match, slot_map[slot], player_id)
+    db.session.commit()
+
+    return jsonify({'message': 'Player updated successfully'})
+
+
 @app.route('/api/matches/current', methods=['GET'])
 def get_current_matches():
     """Get matches from the current/last round."""
@@ -328,13 +420,62 @@ def get_standings():
 
 @app.route('/api/rounds', methods=['GET'])
 def get_rounds():
-    """Get all rounds."""
+    """Get all rounds with deletion status."""
     user = get_current_user()
     if not user:
         return jsonify({'error': 'Login required'}), 401
 
     rounds = Round.query.order_by(Round.round_number.desc()).all()
-    return jsonify([{'id': r.id, 'round_number': r.round_number} for r in rounds])
+    rounds_data = []
+    for r in rounds:
+        # Check if any match has results recorded
+        total_matches = Match.query.filter_by(round_id=r.id).count()
+        matches_without_results = Match.query.filter(
+            Match.round_id == r.id,
+            Match.result_json == None
+        ).count()
+        can_delete = (matches_without_results == total_matches)
+        rounds_data.append({
+            'id': r.id,
+            'round_number': r.round_number,
+            'can_delete': can_delete
+        })
+    return jsonify(rounds_data)
+
+
+@app.route('/api/rounds/<int:round_id>', methods=['DELETE'])
+@admin_required
+def delete_round(round_id):
+    """Delete a round (only if no results have been recorded)."""
+    round_obj = Round.query.get(round_id)
+    if not round_obj:
+        return jsonify({'error': 'Round not found'}), 404
+
+    # Check if any matches in this round have results recorded
+    matches_with_results = Match.query.filter_by(
+        round_id=round_id,
+        result_json=None
+    ).count()
+
+    # If some matches have results (result_json is not None) and some don't
+    # We'll check if ANY match has results to prevent deletion
+    total_matches = Match.query.filter_by(round_id=round_id).count()
+    matches_without_results = Match.query.filter(
+        Match.round_id == round_id,
+        Match.result_json == None
+    ).count()
+
+    if matches_without_results < total_matches:
+        return jsonify({'error': 'Results have been recorded for this round. Deletion not allowed.'}), 400
+
+    # Delete all matches in this round first (cascade)
+    Match.query.filter_by(round_id=round_id).delete()
+
+    # Delete the round
+    db.session.delete(round_obj)
+    db.session.commit()
+
+    return jsonify({'message': 'Round deleted successfully'})
 
 
 @app.route('/api/players/<int:participant_id>/matches', methods=['GET'])

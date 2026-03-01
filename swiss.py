@@ -1,5 +1,6 @@
 """Swiss-system pairing algorithm for Pokemon TCG tournaments."""
 
+import random
 from collections import defaultdict
 from itertools import combinations
 from models import Participant, Match, Round, MatchResult, User, db
@@ -99,6 +100,25 @@ def generate_swiss_matches(round_number):
     # Sort by points (desc)
     participants_with_points.sort(key=lambda x: -x['points'])
 
+    # Add randomness to participants with same points to vary pairings
+    # Group by points and shuffle within each group
+    shuffled_participants = []
+    current_points = None
+    current_group = []
+    for p in participants_with_points:
+        if current_points is None or p['points'] == current_points:
+            current_group.append(p)
+        else:
+            random.shuffle(current_group)
+            shuffled_participants.extend(current_group)
+            current_group = [p]
+            current_points = p['points']
+    if current_group:
+        random.shuffle(current_group)
+        shuffled_participants.extend(current_group)
+
+    participants_with_points = shuffled_participants
+
     # Track which players have been paired
     paired = set()
     matches = []
@@ -117,7 +137,7 @@ def generate_swiss_matches(round_number):
 
         while len(unpaired_in_group) >= 4:
             # Try to find 4 players who haven't played each other
-            best_group = None
+            best_groups = []
             min_past_matches = float('inf')
 
             # Get all combinations of 4 from unpaired players
@@ -130,9 +150,13 @@ def generate_swiss_matches(round_number):
 
                 if past_count < min_past_matches:
                     min_past_matches = past_count
-                    best_group = combo
+                    best_groups = [combo]
+                elif past_count == min_past_matches:
+                    best_groups.append(combo)
 
-            if best_group:
+            # If multiple groups have the same past_count, choose randomly
+            if best_groups:
+                best_group = random.choice(best_groups)
                 matches.append({
                     'table_number': table_number,
                     'player_ids': list(best_group)
@@ -142,8 +166,10 @@ def generate_swiss_matches(round_number):
                     paired.add(pid)
                 table_number += 1
             else:
-                # If no clean combination, just take first 4
-                group = list(unpaired_in_group)[:4]
+                # If no clean combination, shuffle remaining players and take 4
+                remaining_list = list(unpaired_in_group)
+                random.shuffle(remaining_list)
+                group = remaining_list[:4]
                 matches.append({
                     'table_number': table_number,
                     'player_ids': group
@@ -180,6 +206,9 @@ def generate_swiss_matches(round_number):
     # Handle any unpaired players from all groups by mixing point groups
     unpaired_all = [p['participant'].id for p in participants_with_points
                     if p['participant'].id not in paired]
+
+    # Shuffle to add randomness when mixing point groups
+    random.shuffle(unpaired_all)
 
     while len(unpaired_all) >= 4:
         group = unpaired_all[:4]
@@ -306,20 +335,24 @@ def process_match_results(match_id, results):
     player_ids = [match.player1_id, match.player2_id, match.player3_id, match.player4_id]
     player_ids = [p for p in player_ids if p is not None and p > 0]
 
-    # Save match results to MatchResult table
+    # Save match results to MatchResult table (only for non-empty results)
     for player_id in player_ids:
         player_result = next((r for r in results if r['player_id'] == player_id), None)
         if player_result:
-            # Save match result
-            match_result = MatchResult(
-                match_id=match_id,
-                player_id=player_id,
-                win=player_result.get('win', 0),
-                loss=player_result.get('loss', 0),
-                draw=player_result.get('draw', 0),
-                points=player_result.get('points', 0)
-            )
-            db.session.add(match_result)
+            # Skip if result is empty (no win/loss/draw and points is 0)
+            if not (player_result.get('win', 0) == 0 and
+                    player_result.get('loss', 0) == 0 and
+                    player_result.get('draw', 0) == 0 and
+                    player_result.get('points', 0) == 0):
+                match_result = MatchResult(
+                    match_id=match_id,
+                    player_id=player_id,
+                    win=player_result.get('win', 0),
+                    loss=player_result.get('loss', 0),
+                    draw=player_result.get('draw', 0),
+                    points=player_result.get('points', 0)
+                )
+                db.session.add(match_result)
 
     # Mark match as completed
     match.result_json = str(results)
@@ -341,20 +374,24 @@ def update_match_results(match_id, results):
     player_ids = [match.player1_id, match.player2_id, match.player3_id, match.player4_id]
     player_ids = [p for p in player_ids if p is not None and p > 0]
 
-    # Save updated match results to MatchResult table
+    # Save updated match results to MatchResult table (only for non-empty results)
     for player_id in player_ids:
         player_result = next((r for r in results if r['player_id'] == player_id), None)
         if player_result:
-            # Save match result
-            match_result = MatchResult(
-                match_id=match_id,
-                player_id=player_id,
-                win=player_result.get('win', 0),
-                loss=player_result.get('loss', 0),
-                draw=player_result.get('draw', 0),
-                points=player_result.get('points', 0)
-            )
-            db.session.add(match_result)
+            # Skip if result is empty (no win/loss/draw and points is 0)
+            if not (player_result.get('win', 0) == 0 and
+                    player_result.get('loss', 0) == 0 and
+                    player_result.get('draw', 0) == 0 and
+                    player_result.get('points', 0) == 0):
+                match_result = MatchResult(
+                    match_id=match_id,
+                    player_id=player_id,
+                    win=player_result.get('win', 0),
+                    loss=player_result.get('loss', 0),
+                    draw=player_result.get('draw', 0),
+                    points=player_result.get('points', 0)
+                )
+                db.session.add(match_result)
 
     # Mark match as completed
     match.result_json = str(results)

@@ -188,6 +188,51 @@ header h1 {
     transition: background 0.2s;
 }
 
+/* Progress Bar for loading states */
+.progress-container {
+    background: #f7fafc;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    text-align: center;
+    border: 1px solid #e2e8f0;
+}
+
+.progress-bar {
+    width: 100%;
+    max-width: 400px;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 4px;
+    margin: 10px auto;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    animation: progress-fill 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-fill {
+    0% {
+        transform: translateX(-100%);
+    }
+    50% {
+        transform: translateX(0%);
+    }
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.progress-text {
+    color: #4a5568;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
 .player-actions button.btn-result {
     background: #48bb78;
     color: white;
@@ -279,6 +324,31 @@ tbody tr:last-child {
 
 .match-table tbody tr:last-child td {
     border-bottom: none;
+}
+
+/* Player selection for editing pairings */
+.player-cell {
+    cursor: pointer;
+    transition: background-color 0.2s;
+    position: relative;
+}
+
+.player-cell:hover {
+    background-color: #ebf4ff;
+}
+
+.player-cell.selected {
+    background-color: #667eea;
+    color: white;
+}
+
+.player-cell.selected::after {
+    content: '↺';
+    position: absolute;
+    top: 2px;
+    right: 5px;
+    font-size: 12px;
+    opacity: 0.8;
 }
 
 /* Match Result Form */
@@ -422,6 +492,10 @@ tbody tr:last-child {
 .round-selector label {
     font-weight: 600;
     color: #4a5568;
+}
+
+.round-actions {
+    margin: 10px 0 20px;
 }
 
 #round-select {

@@ -3,6 +3,12 @@
 // 現在のユーザー
 let currentUser = null;
 
+// 組み合わせ編集モード用の状態
+let editPairingState = {
+    active: false,
+    selectedCells: [] // 選択されたプレイヤーのセル
+};
+
 document.addEventListener('DOMContentLoaded', async () => {
     // 現在のユーザーをチェック
     await checkUserSession();
@@ -62,6 +68,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // ラウンドリストのクリックイベント
     document.getElementById('round-list').addEventListener('click', handleRoundClick);
+
+    // ラウンド削除ボタン
+    document.getElementById('delete-round-btn').addEventListener('click', handleDeleteRound);
+
+    // 組み合わせ編集ボタン
+    document.getElementById('edit-pairing-btn').addEventListener('click', toggleEditPairingMode);
+
+    // マッチテーブルのクリック（プレイヤー選択用）
+    document.getElementById('matches-container').addEventListener('click', handleMatchTableClick);
 
     // 参加者リストのクリックイベント
     document.getElementById('participant-list').addEventListener('click', handleParticipantClick);
@@ -271,11 +286,20 @@ async function loadParticipants() {
 }
 
 async function generateMatches() {
+    // プログレスバー表示
+    const btn = document.getElementById('generate-matches-btn');
+    const originalText = btn.textContent;
+    btn.textContent = '処理中...';
+    btn.disabled = true;
+    showProgressBar();
+
     try {
         const response = await fetch('/api/matches/next', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
+
+        hideProgressBar();
 
         if (!response.ok) {
             if (response.status === 401) {
@@ -297,13 +321,57 @@ async function generateMatches() {
             selectFirstRound();
         }, 100);
     } catch (error) {
+        hideProgressBar();
         console.error('試合生成エラー:', error);
         alert('エラー: ' + error.message);
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+// プログレスバー表示
+function showProgressBar() {
+    let container = document.getElementById('progress-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'progress-container';
+        container.className = 'progress-container';
+        container.innerHTML = `
+            <div class="progress-bar">
+                <div class="progress-fill"></div>
+            </div>
+            <p class="progress-text">試合を生成中です...</p>
+        `;
+        const matchesTab = document.getElementById('matches');
+        matchesTab.insertBefore(container, matchesTab.firstChild);
+    } else {
+        container.style.display = 'block';
+    }
+    // アニメーションをリセット
+    const fill = container.querySelector('.progress-fill');
+    fill.style.animation = 'none';
+    fill.offsetHeight; /* trigger reflow */
+    fill.style.animation = 'progress-fill 1.5s ease-in-out infinite';
+}
+
+// プログレスバー非表示
+function hideProgressBar() {
+    const container = document.getElementById('progress-container');
+    if (container) {
+        container.style.display = 'none';
     }
 }
 
 async function viewRoundMatches(roundId) {
     try {
+        // 削除ボタンと編集ボタンの状態を更新（結果が1つでも記録されていれば非表示）
+        const selected = document.querySelector('.round-list-item.selected');
+        const canDelete = selected && selected.dataset.canDelete === 'true';
+
+        document.getElementById('delete-round-btn').style.display = canDelete ? 'inline-block' : 'none';
+        document.getElementById('edit-pairing-btn').style.display = canDelete ? 'inline-block' : 'none';
+
         const response = await fetch(`/api/matches/round/${roundId}`);
         const data = await response.json();
 
@@ -341,12 +409,12 @@ async function viewRoundMatches(roundId) {
 
             const players = match.players;
             tableHtml += `
-                <tr>
+                <tr data-match-id="${match.id}" data-table="${match.table_number}">
                     <td>テーブル ${match.table_number}</td>
-                    <td>${escapeHtml(players[0]?.name || 'BYE')}</td>
-                    <td>${escapeHtml(players[1]?.name || 'BYE')}</td>
-                    <td>${escapeHtml(players[2]?.name || 'BYE')}</td>
-                    <td>${escapeHtml(players[3]?.name || 'BYE')}</td>
+                    <td class="player-cell" data-player-id="${players[0]?.id || ''}" data-slot="0">${escapeHtml(players[0]?.name || 'BYE')}</td>
+                    <td class="player-cell" data-player-id="${players[1]?.id || ''}" data-slot="1">${escapeHtml(players[1]?.name || 'BYE')}</td>
+                    <td class="player-cell" data-player-id="${players[2]?.id || ''}" data-slot="2">${escapeHtml(players[2]?.name || 'BYE')}</td>
+                    <td class="player-cell" data-player-id="${players[3]?.id || ''}" data-slot="3">${escapeHtml(players[3]?.name || 'BYE')}</td>
                     <td>${resultHtml}</td>
                 </tr>
             `;
@@ -416,7 +484,7 @@ async function editMatchResults(matchId) {
         // 後で使用するためにプレイヤーIDを保存
         currentMatchResults[matchId] = match.players;
 
-        // プルダウンとポイント入力のフォーム（現在の値を設定）
+        // プルダウンとポイント入力のフォーム（現在の値を設定、未記録は-）
         container.innerHTML = `
             <div class="match-result-entry" data-match-id="${matchId}">
                 ${match.players.map((p, i) => p.id ? `
@@ -429,11 +497,12 @@ async function editMatchResults(matchId) {
                                     <option value="win" ${match.results.find(r => r.player_id === p.id)?.win === 1 ? 'selected' : ''}>勝ち</option>
                                     <option value="lose" ${match.results.find(r => r.player_id === p.id)?.loss === 1 ? 'selected' : ''}>負け</option>
                                     <option value="draw" ${match.results.find(r => r.player_id === p.id)?.draw === 1 ? 'selected' : ''}>引き分け</option>
+                                    <option value="" ${!match.results.find(r => r.player_id === p.id) ? 'selected' : ''}>-</option>
                                 </select>
                             </label>
                             <label>
                                 ポイント:
-                                <input type="number" min="0" value="${match.results.find(r => r.player_id === p.id)?.points || 0}" class="points-input" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
+                                <input type="number" min="0" value="${match.results.find(r => r.player_id === p.id)?.points || ''}" class="points-input" placeholder="例: 15" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                             </label>
                         </div>
                     </div>
@@ -457,15 +526,38 @@ async function submitMatchResults() {
     const container = document.getElementById('match-results-container');
     const matchId = parseInt(container.querySelector('.match-result-entry').dataset.matchId);
 
+    // すべてのプレイヤーが未記録かどうかチェック
+    const resultSelects = container.querySelectorAll('.result-select');
+    let allEmpty = true;
+    for (const select of resultSelects) {
+        if (select.value) {
+            allEmpty = false;
+            break;
+        }
+    }
+
+    if (allEmpty) {
+        alert('結果を記録してください（少なくとも1人のプレイヤーを選択してください）。');
+        return;
+    }
+
     const results = Array.from(container.querySelectorAll('.player-result')).map((el, i) => {
         const playerData = currentMatchResults[matchId]?.[i];
         const resultSelect = el.querySelector('.result-select').value;
-        const points = parseInt(el.querySelector('.points-input').value) || 0;
+        const pointsInput = el.querySelector('.points-input').value;
+        const points = pointsInput ? parseInt(pointsInput) : 0;
 
         let win = 0, loss = 0, draw = 0;
         if (resultSelect === 'win') win = 1;
         else if (resultSelect === 'lose') loss = 1;
         else if (resultSelect === 'draw') draw = 1;
+
+        // 結果が選択されていない（空）場合は送信しない
+        // resultSelectが空、win/loss/drawのいずれも1でない場合は未記録とみなす
+        const hasWinLossDraw = resultSelect === 'win' || resultSelect === 'lose' || resultSelect === 'draw';
+        if (!hasWinLossDraw) {
+            return null;
+        }
 
         return {
             player_id: playerData?.id || null,
@@ -474,7 +566,7 @@ async function submitMatchResults() {
             draw: draw,
             points: points
         };
-    });
+    }).filter(r => r !== null);
 
     try {
         const response = await fetch('/api/matches', {
@@ -535,6 +627,17 @@ async function refreshMatches() {
     } else {
         document.getElementById('matches-container').innerHTML = '';
     }
+    // 編集モードをリセット
+    editPairingState.active = false;
+    editPairingState.selectedCells = [];
+    document.getElementById('edit-pairing-btn').textContent = '組み合わせを編集';
+    document.getElementById('edit-pairing-btn').className = 'btn-secondary';
+    document.querySelectorAll('.player-cell.selected').forEach(cell => cell.classList.remove('selected'));
+}
+
+// ラウンドリストを再読み込み（削除時などに使用）
+async function loadRounds() {
+    await loadRoundSelect();
 }
 
 // ラウンドリストを読み込み
@@ -558,8 +661,16 @@ async function loadRoundSelect() {
             li.className = 'round-list-item';
             li.textContent = `第${round.round_number}ラウンド`;
             li.dataset.roundId = round.id;
+            li.dataset.roundNumber = round.round_number;
+            li.dataset.canDelete = round.can_delete;
             list.appendChild(li);
         });
+
+        // 最初のラウンドが選択可能かチェック
+        const firstItem = list.querySelector('.round-list-item');
+        if (firstItem) {
+            firstItem.classList.add('selected');
+        }
     } catch (error) {
         console.error('ラウンド読み込みエラー:', error);
     }
@@ -576,6 +687,214 @@ function handleRoundClick(e) {
 
     const roundId = item.dataset.roundId;
     viewRoundMatches(roundId);
+}
+
+// ラウンド削除処理
+async function handleDeleteRound() {
+    const selected = document.querySelector('.round-list-item.selected');
+    if (!selected) return;
+
+    const roundId = selected.dataset.roundId;
+    const roundNumber = selected.dataset.roundNumber;
+
+    // 結果が記録されている場合は削除不可（UI側で非表示にするが、念のためチェック）
+    if (!selected.dataset.canDelete || selected.dataset.canDelete === 'false') {
+        alert('結果が記録されているラウンドは削除できません。');
+        return;
+    }
+
+    // 削除確認
+    if (!confirm(`ラウンド ${roundNumber} を削除します。よろしいですか？\n（この操作は取り消せません）`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/rounds/${roundId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const data = await response.json();
+            alert(data.error || '削除に失敗しました。');
+            return;
+        }
+
+        alert('ラウンドを削除しました。');
+
+        // リストを再読み込み
+        await loadRounds();
+
+        // 選択状態をクリア
+        document.querySelectorAll('.round-list-item').forEach(i => i.classList.remove('selected'));
+        document.getElementById('matches-container').innerHTML = '<p class="no-matches">ラウンドを選択してください。</p>';
+        document.getElementById('delete-round-btn').style.display = 'none';
+        document.getElementById('edit-pairing-btn').style.display = 'none';
+        // 編集モードを解除
+        editPairingState.active = false;
+        editPairingState.selectedCells = [];
+        // 選択クラスをすべてクリア
+        document.querySelectorAll('.player-cell.selected').forEach(cell => cell.classList.remove('selected'));
+    } catch (error) {
+        console.error('ラウンド削除エラー:', error);
+        alert('削除中にエラーが発生しました。');
+    }
+}
+
+// 組み合わせ編集モードの切り替え
+function toggleEditPairingMode() {
+    editPairingState.active = !editPairingState.active;
+    if (editPairingState.active) {
+        document.getElementById('edit-pairing-btn').textContent = '組み合わせを確定';
+        document.getElementById('edit-pairing-btn').className = 'btn-primary';
+        alert('プレイヤーを選択して入れ替えます。\n1. 1人目のプレイヤーをクリック\n2. 2人目のプレイヤーをクリック\n（同じテーブル内のプレイヤーのみ入れ替え可能）');
+    } else {
+        document.getElementById('edit-pairing-btn').textContent = '組み合わせを編集';
+        document.getElementById('edit-pairing-btn').className = 'btn-secondary';
+        document.querySelectorAll('.player-cell.selected').forEach(cell => cell.classList.remove('selected'));
+    }
+}
+
+// マッチテーブルのクリック処理（プレイヤー選択）
+function handleMatchTableClick(e) {
+    if (!editPairingState.active) return;
+
+    const cell = e.target.closest('.player-cell');
+    if (!cell) return;
+
+    const matchId = cell.closest('tr').dataset.matchId;
+    const tableNumber = cell.closest('tr').dataset.table;
+    const playerId = cell.dataset.playerId;
+    const slot = parseInt(cell.dataset.slot);
+
+    // BYEは選択不可
+    if (!playerId || playerId === '') return;
+
+    // 既に選択されている場合は選択解除
+    if (editPairingState.selectedCells.includes(cell)) {
+        cell.classList.remove('selected');
+        editPairingState.selectedCells = editPairingState.selectedCells.filter(c => c !== cell);
+        return;
+    }
+
+    // 選択（2人まで）
+    if (editPairingState.selectedCells.length < 2) {
+        cell.classList.add('selected');
+        editPairingState.selectedCells.push({ cell, matchId, tableNumber, playerId, slot });
+
+        // 2人選択されたら入れ替え
+        if (editPairingState.selectedCells.length === 2) {
+            swapPlayers();
+        }
+    }
+}
+
+// プレイヤーの入れ替え処理
+async function swapPlayers() {
+    const [player1, player2] = editPairingState.selectedCells;
+
+    // 入れ替え確認
+    const playerName1 = player1.cell.textContent.trim();
+    const playerName2 = player2.cell.textContent.trim();
+    if (!confirm(`${playerName1} と ${playerName2} を入れ替えます。よろしいですか？`)) {
+        resetEditSelection();
+        return;
+    }
+
+    try {
+        // 異なるテーブルの場合は個別に更新、同じテーブルの場合は一括更新
+        if (player1.matchId === player2.matchId && player1.slot !== player2.slot) {
+            // 同じテーブル内で入れ替え
+            const response = await fetch(`/api/matches/${player1.matchId}/swap`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    slot1: player1.slot,
+                    slot2: player2.slot
+                })
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                alert('エラー: ' + (error.error || '入れ替えに失敗しました'));
+                resetEditSelection();
+                return;
+            }
+        } else {
+            // 異なるテーブルの場合は、それぞれのスロットを更新
+            // まずplayer1を空にしてからplayer2を移動、その後player1を追加
+            await swapPlayersAcrossTables(player1, player2);
+        }
+
+        alert('入れ替えが完了しました。');
+        resetEditSelection();
+        // マッチリストを再読み込み
+        await viewRoundMatches(document.querySelector('.round-list-item.selected').dataset.roundId);
+    } catch (error) {
+        console.error('プレイヤー入れ替えエラー:', error);
+        alert('入れ替え中にエラーが発生しました。');
+        resetEditSelection();
+    }
+}
+
+// 異なるテーブル間のプレイヤー入れ替え
+async function swapPlayersAcrossTables(player1, player2) {
+    // 各マッチのデータを取得
+    const response1 = await fetch(`/api/matches/${player1.matchId}`);
+    const match1 = await response1.json();
+
+    const response2 = await fetch(`/api/matches/${player2.matchId}`);
+    const match2 = await response2.json();
+
+    // プレイヤーIDを取得（BYEはnullとして扱う）
+    const player1Id = player1.playerId;
+    const player2Id = player2.playerId;
+
+    // slot -> player_id のマッピング
+    const slotToField = {
+        0: 'player1_id',
+        1: 'player2_id',
+        2: 'player3_id',
+        3: 'player4_id'
+    };
+
+    // マッチ1のスロット1を空にする（プレイヤー2をそこに移す）
+    // マッチ2のスロット2を空にする（プレイヤー1をそこに移す）
+
+    // マッチ1: player1のスロットをプレイヤー2に変更
+    let response = await fetch(`/api/matches/${player1.matchId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            slot: player1.slot,
+            player_id: player2Id
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '入れ替えに失敗しました');
+    }
+
+    // マッチ2: player2のスロットをプレイヤー1に変更
+    response = await fetch(`/api/matches/${player2.matchId}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            slot: player2.slot,
+            player_id: player1Id
+        })
+    });
+
+    if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || '入れ替えに失敗しました');
+    }
+}
+
+// 編集選択のリセット
+function resetEditSelection() {
+    editPairingState.selectedCells.forEach(item => item.cell.classList.remove('selected'));
+    editPairingState.selectedCells = [];
 }
 
 // 最初のラウンドを選択（リスト表示向け）
@@ -797,11 +1116,12 @@ async function editPlayerMatch(matchId, roundId, tableNumber) {
                                     <option value="win" ${existingResults[p.id]?.win === 1 ? 'selected' : ''}>勝ち</option>
                                     <option value="lose" ${existingResults[p.id]?.loss === 1 ? 'selected' : ''}>負け</option>
                                     <option value="draw" ${existingResults[p.id]?.draw === 1 ? 'selected' : ''}>引き分け</option>
+                                    <option value="" ${!existingResults[p.id] ? 'selected' : ''}>-</option>
                                 </select>
                             </label>
                             <label>
                                 ポイント:
-                                <input type="number" min="0" value="${existingResults[p.id]?.points || 0}" class="player-points-input" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
+                                <input type="number" min="0" value="${existingResults[p.id]?.points || ''}" class="player-points-input" placeholder="例: 15" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                             </label>
                         </div>
                     </div>
@@ -840,6 +1160,21 @@ async function submitPlayerMatchResult() {
         return;
     }
 
+    // すべてのプレイヤーが未記録かどうかチェック
+    const resultSelects = container.querySelectorAll('.player-result-select');
+    let allEmpty = true;
+    for (const select of resultSelects) {
+        if (select.value) {
+            allEmpty = false;
+            break;
+        }
+    }
+
+    if (allEmpty) {
+        alert('結果を記録してください（少なくとも1人のプレイヤーを選択してください）。');
+        return;
+    }
+
     const playerResults = Array.from(container.querySelectorAll('.player-result')).map((el, i) => {
         const playerData = currentMatchResults[matchId]?.[i];
         const resultSelect = el.querySelector('.player-result-select').value;
@@ -850,6 +1185,13 @@ async function submitPlayerMatchResult() {
         else if (resultSelect === 'lose') loss = 1;
         else if (resultSelect === 'draw') draw = 1;
 
+        // 結果が選択されていない（空）場合は送信しない
+        // resultSelectが空、win/loss/drawのいずれも1でない場合は未記録とみなす
+        const hasWinLossDraw = resultSelect === 'win' || resultSelect === 'lose' || resultSelect === 'draw';
+        if (!hasWinLossDraw) {
+            return null;
+        }
+
         return {
             player_id: playerData?.id || null,
             win: win,
@@ -857,7 +1199,7 @@ async function submitPlayerMatchResult() {
             draw: draw,
             points: points
         };
-    });
+    }).filter(r => r !== null);
 
     try {
         const response = await fetch(`/api/players/${currentPlayerId}/round/${formRoundId}/match`, {
@@ -924,7 +1266,7 @@ async function showMatchResults(matchId) {
         // 後で使用するためにプレイヤーIDを保存
         currentMatchResults[matchId] = match.players;
 
-        // プルダウンとポイント入力のフォーム（デフォルトは負け）
+        // プルダウンとポイント入力のフォーム（デフォルトは未記録）
         container.innerHTML = `
             <div class="match-result-entry" data-match-id="${matchId}">
                 ${match.players.map((p, i) => p.id ? `
@@ -935,13 +1277,14 @@ async function showMatchResults(matchId) {
                                 結果:
                                 <select class="result-select" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                                     <option value="win">勝ち</option>
-                                    <option value="lose" selected>負け</option>
+                                    <option value="lose">負け</option>
                                     <option value="draw">引き分け</option>
+                                    <option value="" selected>-</option>
                                 </select>
                             </label>
                             <label>
                                 ポイント:
-                                <input type="number" min="0" value="0" class="points-input" placeholder="例: 15" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
+                                <input type="number" min="0" value="" class="points-input" placeholder="例: 15" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                             </label>
                         </div>
                     </div>
