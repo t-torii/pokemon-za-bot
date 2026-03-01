@@ -95,26 +95,32 @@
                         <tbody id="participants-body">
                             <!-- JSで表示 -->
                         </tbody>
-                        <tfoot>
-                            <tr id="player-match-results-row" class="hidden">
-                                <td colspan="6">
-                                    <div id="player-match-list">
-                                        <!-- 参加者の試合結果がJSで表示 -->
-                                    </div>
-                                    <div id="player-match-form" class="hidden" style="margin-top: 15px; padding: 15px; background: #f7fafc; border-radius: 8px;">
-                                        <h3 id="player-match-form-title" style="margin-bottom: 15px;">試合結果入力</h3>
-                                        <div id="player-match-form-container">
-                                            <!-- 結果入力フォーム -->
-                                        </div>
-                                        <div style="margin-top: 15px; display: flex; gap: 10px;">
-                                            <button id="player-submit-btn" class="btn-primary">結果を提出</button>
-                                            <button id="player-cancel-btn" class="btn-secondary">キャンセル</button>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                        </tfoot>
                     </table>
+                </div>
+
+                <!-- 参加者の結果表示エリア（テーブル外） -->
+                <div id="player-match-results" class="hidden">
+                    <div class="section-header">
+                        <h2>試合結果</h2>
+                        <div>
+                            <button id="player-results-back-btn" class="btn-secondary">戻る</button>
+                        </div>
+                    </div>
+                    <div id="player-match-list">
+                        <!-- 参加者の試合結果がJSで表示 -->
+                    </div>
+                </div>
+
+                <!-- 結果入力フォーム（参加者の結果表示エリア内） -->
+                <div id="player-match-form-container-wrapper" class="hidden" style="margin-top: 15px; padding: 15px; background: #f7fafc; border-radius: 8px;">
+                    <h3 id="player-match-form-title" style="margin-bottom: 15px;">試合結果入力</h3>
+                    <div id="player-match-form-container">
+                        <!-- 結果入力フォーム -->
+                    </div>
+                    <div style="margin-top: 15px; display: flex; gap: 10px;">
+                        <button id="player-submit-btn" class="btn-primary">結果を提出</button>
+                        <button id="player-cancel-btn" class="btn-secondary">キャンセル</button>
+                    </div>
                 </div>
 
                 <!-- 参加者選択エリア -->
@@ -123,27 +129,6 @@
                     <ul id="participant-list" class="round-list">
                         <li class="round-list-empty">-- 参加者を選択してください --</li>
                     </ul>
-                </div>
-
-                <!-- 選択した参加者の試合結果 -->
-                <div id="player-match-results" class="hidden">
-                    <div class="section-header">
-                        <h2 id="player-match-title">試合結果</h2>
-                        <div>
-                            <button id="player-results-back-btn" class="btn-secondary">戻る</button>
-                        </div>
-                    </div>
-                    <div id="player-match-list">
-                        <!-- 参加者の試合結果がJSで表示 -->
-                    </div>
-                    <div id="player-match-form" class="hidden">
-                        <h3 id="player-match-form-title">試合結果入力</h3>
-                        <div id="player-match-form-container">
-                            <!-- 結果入力フォーム -->
-                        </div>
-                        <button id="player-submit-btn" class="btn-primary">結果を提出</button>
-                        <button id="player-cancel-btn" class="btn-secondary">キャンセル</button>
-                    </div>
                 </div>
             </div>
 

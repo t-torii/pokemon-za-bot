@@ -138,6 +138,14 @@ header h1 {
     background: #38a169;
 }
 
+/* Disabled button for non-admin users */
+.disabled-btn {
+    background: #cbd5e0;
+    color: #718096;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
 .btn-danger {
     background: #e53e3e;
     color: white;
@@ -548,14 +556,7 @@ tbody tr:last-child {
 
 /* Participant Selector */
 .participant-selector {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin: 20px 0;
-    padding: 15px;
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    display: none;
 }
 
 .participant-selector label {
@@ -668,18 +669,17 @@ tbody tr:last-child {
     gap: 10px;
 }
 
+/* フォームラッパー（ラウンドセクション直下） */
+.player-match-form-wrapper {
+    margin-top: 15px;
+    padding: 15px;
+    background: #f7fafc;
+    border-radius: 8px;
+}
+
 /* 参加者行の強調表示 */
 .participant-row.highlighted {
     background-color: #f6e05e !important;
-}
-
-/* 参加者試合結果列 */
-tfoot tr {
-    background: #f7fafc;
-}
-
-tfoot td {
-    padding: 20px !important;
 }
 
 /* 参加者試合結果カード */

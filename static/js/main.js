@@ -78,13 +78,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     // マッチテーブルのクリック（プレイヤー選択用）
     document.getElementById('matches-container').addEventListener('click', handleMatchTableClick);
 
-    // 参加者リストのクリックイベント
-    document.getElementById('participant-list').addEventListener('click', handleParticipantClick);
-
     // 参加者試合結果関連
     document.getElementById('player-results-back-btn').addEventListener('click', hidePlayerMatchResults);
-    document.getElementById('player-cancel-btn').addEventListener('click', hidePlayerMatchForm);
-    document.getElementById('player-submit-btn').addEventListener('click', submitPlayerMatchResult);
+    document.getElementById('player-submit-btn').addEventListener('click', () => {
+        // 既存のsubmitPlayerMatchResult関数は非推奨だが、互換性のために残す
+        submitPlayerMatchResult();
+    });
     // 行のクリックで結果セクションを隠す（キャンセルと同等）
     document.getElementById('player-match-list').addEventListener('click', (e) => {
         if (e.target.classList.contains('player-match-card')) {
@@ -261,10 +260,19 @@ async function loadParticipants() {
             return;
         }
 
-        tbody.innerHTML = participants.map(p => {
+        // 自分を一番上にするため、並び替え
+        const sortedParticipants = [...participants].sort((a, b) => {
+            const isACurrentUser = currentUser && currentUser.participant_id === a.id;
+            const isBCurrentUser = currentUser && currentUser.participant_id === b.id;
+            if (isACurrentUser) return -1;
+            if (isBCurrentUser) return 1;
+            return 0;
+        });
+
+        tbody.innerHTML = sortedParticipants.map(p => {
             // 非管理者の場合、自分の参加者のみ表示し、削除ボタンを隠す
             const canModify = is_admin || (currentUser && currentUser.participant_id === p.id);
-            
+
             return `
             <tr class="participant-row" data-participant-id="${p.id}">
                 <td>${escapeHtml(p.name)}</td>
@@ -400,12 +408,28 @@ async function viewRoundMatches(roundId) {
         `;
 
         data.matches.forEach(match => {
+            // 管理者でない場合は結果記録/修正ボタンを非表示（グレーアウト）
+            const isAdmin = currentUser && currentUser.is_admin;
+            const isParticipantMatch = match.players.some(p => p.id === currentUser?.participant_id);
+
+            // 参加者かつ管理者でない場合は、自分の試合のみ結果登録可能（参加者タブからのみ）
+            // 試合タブでは操作不可とするため、ボタンを非表示
+            const canEditResults = isAdmin && match.result_json === null; // 結果未記録の場合は表示（編集モード用）
+            const canEditCompleted = isAdmin; // 結果完了の場合は管理者のみ修正可能
+
             const resultHtml = match.completed
-                ? `
+                ? (isAdmin
+                    ? `
                     <button class="btn-edit" onclick="editMatchResults(${match.id})">結果修正</button>
                     <button class="btn-secondary" onclick="showMatchHistory(${match.id})">結果履歴</button>
                   `
-                : `<button class="btn-secondary" onclick="showMatchResults(${match.id})">結果を記録</button>`;
+                    : `
+                    <span class="btn-secondary disabled-btn">結果記録済み</span>
+                    <button class="btn-secondary" onclick="showMatchHistory(${match.id})">結果履歴</button>
+                  `)
+                : (isAdmin
+                    ? `<button class="btn-secondary" onclick="showMatchResults(${match.id})">結果を記録</button>`
+                    : `<span class="btn-secondary disabled-btn">結果未記録</span>`);
 
             const players = match.players;
             tableHtml += `
@@ -742,6 +766,12 @@ async function handleDeleteRound() {
 
 // 組み合わせ編集モードの切り替え
 function toggleEditPairingMode() {
+    // 管理者以外は操作不可
+    if (!currentUser || !currentUser.is_admin) {
+        alert('この機能は管理者のみ使用可能です。');
+        return;
+    }
+
     editPairingState.active = !editPairingState.active;
     if (editPairingState.active) {
         document.getElementById('edit-pairing-btn').textContent = '組み合わせを確定';
@@ -756,6 +786,9 @@ function toggleEditPairingMode() {
 
 // マッチテーブルのクリック処理（プレイヤー選択）
 function handleMatchTableClick(e) {
+    // 管理者以外は操作不可
+    if (!currentUser || !currentUser.is_admin) return;
+
     if (!editPairingState.active) return;
 
     const cell = e.target.closest('.player-cell');
@@ -956,24 +989,24 @@ let currentPlayerId = null;
 
 async function showPlayerMatchResults(participantId) {
     currentPlayerId = participantId;
-    const form = document.getElementById('player-match-form');
-    form.classList.add('hidden');
+    const form = document.getElementById('player-match-form-container');
+    form.innerHTML = ''; // フォームをクリア
 
     try {
         const response = await fetch(`/api/players/${participantId}/matches`);
         const data = await response.json();
 
         const participantRow = document.querySelector(`.participant-row[data-participant-id="${participantId}"]`);
-        const resultsRow = document.getElementById('player-match-results-row');
+        const wrapper = document.getElementById('player-match-form-container-wrapper');
+        wrapper.classList.add('hidden'); // フォームを隠す
 
         if (data.matches.length === 0) {
             const container = document.getElementById('player-match-list');
             container.innerHTML = '<p>この参加者の試合はまだありません。</p>';
-            resultsRow.classList.remove('hidden');
-
-            // 合計も表示
-            const totalStats = document.getElementById('player-match-total-stats');
-            totalStats.innerHTML = '<p>試合がないため、合計もありません。</p>';
+            const resultsSection = document.getElementById('player-match-results');
+            resultsSection.classList.remove('hidden');
+            // スクロールして表示領域へ
+            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
             return;
         }
 
@@ -992,15 +1025,20 @@ async function showPlayerMatchResults(participantId) {
             if (!rounds[match.round_id]) {
                 rounds[match.round_id] = {
                     round_number: match.round_number,
+                    round_id: match.round_id,
                     matches: []
                 };
             }
             rounds[match.round_id].matches.push(match);
         });
 
+        // ラウンドを新しい順（降順）に並び替え
+        const sortedRounds = Object.values(rounds).sort((a, b) => b.round_number - a.round_number);
+
         let html = totalStatsHtml;
-        Object.values(rounds).forEach(round => {
-            html += `<div class="player-round-section" data-round-id="${round.round_id}">`;
+        sortedRounds.forEach(round => {
+            console.log('Creating round section:', round);
+            html += `<div class="player-round-section" data-round-id="${round.round_id || 'unknown'}">`;
             html += `<h4>第${round.round_number}ラウンド</h4>`;
             html += `<div class="player-round-matches">`;
 
@@ -1059,39 +1097,28 @@ async function showPlayerMatchResults(participantId) {
 
         const container = document.getElementById('player-match-list');
         container.innerHTML = html;
-        resultsRow.classList.remove('hidden');
+        const resultsSection = document.getElementById('player-match-results');
+        resultsSection.classList.remove('hidden');
 
         // 参加者行を強調表示
         participantRow.classList.add('highlighted');
+
+        // 結果表示エリアへスクロール
+        resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     } catch (error) {
         console.error('参加者試合結果取得エラー:', error);
         alert('試合結果の取得に失敗しました');
     }
 }
 
-// 試合結果セクションを隠す
-function hidePlayerMatchResults() {
-    document.getElementById('player-match-results-row').classList.add('hidden');
-    // 参加者行の強調表示を解除
-    if (currentPlayerId) {
-        const participantRow = document.querySelector(`.participant-row[data-participant-id="${currentPlayerId}"]`);
-        if (participantRow) {
-            participantRow.classList.remove('highlighted');
-        }
-    }
-    currentPlayerId = null;
-}
-
 // 参加者試合結果フォームを表示
 let currentEditMatchData = null;
 
 async function editPlayerMatch(matchId, roundId, tableNumber) {
+    console.log('editPlayerMatch called:', { matchId, roundId, tableNumber });
     try {
         const response = await fetch(`/api/matches/${matchId}`);
         const match = await response.json();
-
-        const form = document.getElementById('player-match-form');
-        const container = document.getElementById('player-match-form-container');
 
         // 既存の結果を取得
         const existingResults = {};
@@ -1104,7 +1131,7 @@ async function editPlayerMatch(matchId, roundId, tableNumber) {
         currentMatchResults[matchId] = match.players;
 
         // テーブル番号とラウンドIDをデータ属性に保存
-        container.innerHTML = `
+        const formHtml = `
             <div class="player-match-form-entry" data-match-id="${matchId}" data-table-number="${tableNumber}" data-round-id="${roundId}">
                 ${match.players.map((p, i) => p.id ? `
                     <div class="player-result ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}" data-player-id="${p.id}">
@@ -1127,21 +1154,52 @@ async function editPlayerMatch(matchId, roundId, tableNumber) {
                     </div>
                 ` : `<div class="player-result"><em>BYE - 該当なし</em></div>`).join('')}
             </div>
+            <div style="margin-top: 15px; display: flex; gap: 10px;">
+                <button class="btn-primary" onclick="submitPlayerMatchResultFromForm(${matchId})">結果を提出</button>
+                <button class="btn-secondary" onclick="cancelEditFromForm()">キャンセル</button>
+            </div>
         `;
 
-        document.getElementById('player-match-form-title').textContent = `結果を修正 (テーブル ${tableNumber})`;
-        form.classList.remove('hidden');
+        // ラウンドセクションを検索して、その直下にフォームを追加
+        const resultsList = document.getElementById('player-match-list');
+        console.log('resultsList:', resultsList);
+        const allRoundSections = resultsList ? resultsList.querySelectorAll('.player-round-section') : [];
+        console.log('All round sections:', allRoundSections);
+        const roundSection = resultsList ? resultsList.querySelector(`.player-round-section[data-round-id="${String(roundId)}"]`) : null;
+        console.log('Looking for roundSection with roundId:', roundId);
+        console.log('roundSection found:', roundSection);
+        if (roundSection) {
+            // 既存のフォームがあれば削除
+            const existingForm = roundSection.querySelector('.player-match-form-wrapper');
+            if (existingForm) {
+                existingForm.remove();
+            }
+
+            // ラウンドセクションの直下にフォームを追加
+            const formWrapper = document.createElement('div');
+            formWrapper.className = 'player-match-form-wrapper';
+            formWrapper.innerHTML = formHtml;
+            roundSection.appendChild(formWrapper);
+            console.log('Form wrapper added to roundSection:', roundSection);
+
+            // スクロールしてフォームを表示
+            formWrapper.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            console.error('ラウンドセクションが見つかりませんでした');
+            console.error('利用可能なラウンドセクション:', allRoundSections);
+            alert('エラー：ラウンドセクションが見つかりませんでした。ページを再読み込みしてください。');
+        }
     } catch (error) {
         console.error('試合詳細取得エラー:', error);
         alert('試合詳細の取得に失敗しました');
     }
 }
 
-// 参加者試合結果フォームを隠す
+// 参加者試合結果フォームを隠す（ラウンドセクション内のフォームを削除）
 function hidePlayerMatchForm() {
-    document.getElementById('player-match-form').classList.add('hidden');
-    // 参加者結果セクションを隠す
-    hidePlayerMatchResults();
+    const resultsList = document.getElementById('player-match-list');
+    const formWrappers = resultsList ? resultsList.querySelectorAll('.player-match-form-wrapper') : [];
+    formWrappers.forEach(wrapper => wrapper.remove());
 }
 
 // 参加者試合結果を提出
@@ -1243,10 +1301,114 @@ function hidePlayerMatchResults() {
     document.querySelectorAll('.round-list-item').forEach(i => i.classList.remove('selected'));
     // 参加者選択も解除
     document.querySelectorAll('#participant-list .round-list-item').forEach(i => i.classList.remove('selected'));
+    // 参加者行の強調表示を解除
+    document.querySelectorAll('.participant-row.highlighted').forEach(row => row.classList.remove('highlighted'));
+    currentPlayerId = null;
 }
 
 // グローバルストア - 現在の試合結果データ
 let currentMatchResults = {};
+
+// フォームから結果を提出（ラウンドセクション直下のフォーム用）
+async function submitPlayerMatchResultFromForm(matchId) {
+    const resultsList = document.getElementById('player-match-list');
+    const formEntry = resultsList ? resultsList.querySelector(`.player-match-form-entry[data-match-id="${matchId}"]`) : null;
+    if (!formEntry) {
+        alert('フォーム情報が見つかりません');
+        return;
+    }
+
+    const formRoundId = formEntry.dataset.roundId;
+    const tableNumber = parseInt(formEntry.dataset.tableNumber);
+
+    if (!formRoundId) {
+        alert('ラウンド情報が取得できませんでした');
+        return;
+    }
+
+    // すべてのプレイヤーが未記録かどうかチェック
+    const resultSelects = formEntry.querySelectorAll('.player-result-select');
+    let allEmpty = true;
+    for (const select of resultSelects) {
+        if (select.value) {
+            allEmpty = false;
+            break;
+        }
+    }
+
+    if (allEmpty) {
+        alert('結果を記録してください（少なくとも1人のプレイヤーを選択してください）。');
+        return;
+    }
+
+    const playerResults = Array.from(formEntry.querySelectorAll('.player-result')).map((el, i) => {
+        const playerData = currentMatchResults[matchId]?.[i];
+        const resultSelect = el.querySelector('.player-result-select').value;
+        const points = parseInt(el.querySelector('.player-points-input').value) || 0;
+
+        let win = 0, loss = 0, draw = 0;
+        if (resultSelect === 'win') win = 1;
+        else if (resultSelect === 'lose') loss = 1;
+        else if (resultSelect === 'draw') draw = 1;
+
+        // 結果が選択されていない（空）場合は送信しない
+        const hasWinLossDraw = resultSelect === 'win' || resultSelect === 'lose' || resultSelect === 'draw';
+        if (!hasWinLossDraw) {
+            return null;
+        }
+
+        return {
+            player_id: playerData?.id || null,
+            win: win,
+            loss: loss,
+            draw: draw,
+            points: points
+        };
+    }).filter(r => r !== null);
+
+    try {
+        const response = await fetch(`/api/players/${currentPlayerId}/round/${formRoundId}/match`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                match_id: matchId,
+                table_number: tableNumber,
+                results: playerResults
+            })
+        });
+
+        if (response.ok) {
+            alert('結果を更新しました！');
+            // フォームを削除
+            const formWrappers = document.querySelectorAll('.player-match-form-wrapper');
+            formWrappers.forEach(wrapper => wrapper.remove());
+            if (currentPlayerId) {
+                await showPlayerMatchResults(currentPlayerId);
+            }
+            // 順位表と参加者管理を更新
+            refreshStandings();
+            loadParticipants();
+        } else if (response.status === 401) {
+            alert('ログインが必要です');
+            window.location.href = '/';
+        } else if (response.status === 403) {
+            alert('アクセスが拒否されました');
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.error || '結果の更新に失敗しました'));
+        }
+    } catch (error) {
+        console.error('結果更新エラー:', error);
+        alert('エラー: ' + error.message);
+    }
+}
+
+// フォームをキャンセル（ラウンドセクション直下のフォーム用）
+function cancelEditFromForm() {
+    const resultsList = document.getElementById('player-match-list');
+    const formWrappers = resultsList ? resultsList.querySelectorAll('.player-match-form-wrapper') : [];
+    formWrappers.forEach(wrapper => wrapper.remove());
+}
 
 async function showMatchResults(matchId) {
     const form = document.getElementById('match-results-form');
