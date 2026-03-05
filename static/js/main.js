@@ -104,6 +104,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // キャンセルボタン
     document.getElementById('cancel-edit-btn').addEventListener('click', cancelEdit);
 
+    // フリーズボタン
+    document.getElementById('freeze-round-btn').addEventListener('click', handleFreezeRound);
+
     // データクリアボタン
     document.getElementById('clear-data-btn').addEventListener('click', clearAllData);
 
@@ -278,7 +281,6 @@ async function loadParticipants() {
                 <td>${escapeHtml(p.name)}</td>
                 <td>${p.win_count}</td>
                 <td>${p.loss_count}</td>
-                <td>${p.draw_count}</td>
                 <td>${p.points}</td>
                 <td>
                     <div class="player-actions">
@@ -376,9 +378,21 @@ async function viewRoundMatches(roundId) {
         // 削除ボタンと編集ボタンの状態を更新（結果が1つでも記録されていれば非表示）
         const selected = document.querySelector('.round-list-item.selected');
         const canDelete = selected && selected.dataset.canDelete === 'true';
+        const isFrozen = selected && selected.dataset.isFrozen === 'true';
+        const isAdmin = currentUser && currentUser.is_admin;
 
         document.getElementById('delete-round-btn').style.display = canDelete ? 'inline-block' : 'none';
         document.getElementById('edit-pairing-btn').style.display = canDelete ? 'inline-block' : 'none';
+
+        // フリーズボタンは管理者のみ表示
+        const freezeBtn = document.getElementById('freeze-round-btn');
+        if (isAdmin) {
+            freezeBtn.style.display = 'inline-block';
+            freezeBtn.textContent = isFrozen ? 'フリーズ解除' : 'このラウンドをフリーズ';
+            freezeBtn.className = isFrozen ? 'btn-secondary' : 'btn-warning';
+        } else {
+            freezeBtn.style.display = 'none';
+        }
 
         const response = await fetch(`/api/matches/round/${roundId}`);
         const data = await response.json();
@@ -471,7 +485,7 @@ async function showMatchHistory(matchId) {
                                 <span class="history-player">${escapeHtml(p.name)}</span>
                                 <div class="history-data">
                                     ${result ? `
-                                        勝: ${result.win} / 負: ${result.loss} / 引: ${result.draw} / ポイント: ${result.points}
+                                        勝: ${result.win} / 負: ${result.loss} / ポイント: ${result.points}
                                     ` : '未記録'}
                                 </div>
                             </div>
@@ -479,7 +493,7 @@ async function showMatchHistory(matchId) {
                     }).join('')}
                 </div>
                 <div style="margin-top: 15px;">
-                    <button class="btn-secondary" onclick="editMatchResults(${matchId})">結果を修正</button>
+                    ${currentUser && currentUser.is_admin ? `<button class="btn-secondary" onclick="editMatchResults(${matchId})">結果を修正</button>` : ''}
                     <button class="btn-danger" onclick="cancelEdit()">閉じる</button>
                 </div>
             </div>
@@ -487,6 +501,11 @@ async function showMatchHistory(matchId) {
 
         document.getElementById('match-form-title').textContent = '結果履歴';
         form.classList.remove('hidden');
+
+        // 管理者以外は「結果を提出」「キャンセル」ボタンを非表示
+        const isAdmin = currentUser && currentUser.is_admin;
+        document.getElementById('submit-results-btn').style.display = isAdmin ? '' : 'none';
+        document.getElementById('cancel-edit-btn').style.display = isAdmin ? '' : 'none';
     } catch (error) {
         console.error('結果履歴取得エラー:', error);
     }
@@ -520,7 +539,6 @@ async function editMatchResults(matchId) {
                                 <select class="result-select" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                                     <option value="win" ${match.results.find(r => r.player_id === p.id)?.win === 1 ? 'selected' : ''}>勝ち</option>
                                     <option value="lose" ${match.results.find(r => r.player_id === p.id)?.loss === 1 ? 'selected' : ''}>負け</option>
-                                    <option value="draw" ${match.results.find(r => r.player_id === p.id)?.draw === 1 ? 'selected' : ''}>引き分け</option>
                                     <option value="" ${!match.results.find(r => r.player_id === p.id) ? 'selected' : ''}>-</option>
                                 </select>
                             </label>
@@ -535,6 +553,8 @@ async function editMatchResults(matchId) {
         `;
 
         document.getElementById('match-form-title').textContent = '結果を修正';
+        document.getElementById('submit-results-btn').style.display = '';
+        document.getElementById('cancel-edit-btn').style.display = '';
         form.classList.remove('hidden');
     } catch (error) {
         console.error('結果取得エラー:', error);
@@ -633,7 +653,6 @@ async function refreshStandings() {
                 <td>${escapeHtml(s.name)}</td>
                 <td>${s.wins}</td>
                 <td>${s.losses}</td>
-                <td>${s.draws}</td>
                 <td><strong>${s.points}</strong></td>
             </tr>
         `).join('');
@@ -683,10 +702,11 @@ async function loadRoundSelect() {
         rounds.forEach(round => {
             const li = document.createElement('li');
             li.className = 'round-list-item';
-            li.textContent = `第${round.round_number}ラウンド`;
+            li.textContent = `第${round.round_number}ラウンド${round.is_frozen ? ' 🔒' : ''}`;
             li.dataset.roundId = round.id;
             li.dataset.roundNumber = round.round_number;
             li.dataset.canDelete = round.can_delete;
+            li.dataset.isFrozen = round.is_frozen;
             list.appendChild(li);
         });
 
@@ -761,6 +781,41 @@ async function handleDeleteRound() {
     } catch (error) {
         console.error('ラウンド削除エラー:', error);
         alert('削除中にエラーが発生しました。');
+    }
+}
+
+// ラウンドフリーズ処理
+async function handleFreezeRound() {
+    const selected = document.querySelector('.round-list-item.selected');
+    if (!selected) return;
+
+    const roundId = selected.dataset.roundId;
+    const roundNumber = selected.dataset.roundNumber;
+    const isFrozen = selected.dataset.isFrozen === 'true';
+    const action = isFrozen ? 'フリーズ解除' : 'フリーズ';
+
+    if (!confirm(`ラウンド ${roundNumber} を${action}しますか？`)) return;
+
+    try {
+        const response = await fetch(`/api/rounds/${roundId}/freeze`, { method: 'POST' });
+        if (!response.ok) {
+            const data = await response.json();
+            alert(data.error || `${action}に失敗しました。`);
+            return;
+        }
+        const data = await response.json();
+        alert(data.message);
+
+        // ラウンドリストを再読み込みして選択状態を復元
+        await loadRoundSelect();
+        const newSelected = document.querySelector(`.round-list-item[data-round-id="${roundId}"]`);
+        if (newSelected) {
+            newSelected.classList.add('selected');
+            await viewRoundMatches(roundId);
+        }
+    } catch (error) {
+        console.error('フリーズ処理エラー:', error);
+        alert('処理中にエラーが発生しました。');
     }
 }
 
@@ -1015,7 +1070,7 @@ async function showPlayerMatchResults(participantId) {
         const totalStatsHtml = `
             <div class="player-total-stats">
                 <h4>全ラウンド合計</h4>
-                <p>勝ち: ${totalStats.wins} / 負け: ${totalStats.losses} / 引き分け: ${totalStats.draws} / ポイント: ${totalStats.points}</p>
+                <p>勝ち: ${totalStats.wins} / 負け: ${totalStats.losses} / ポイント: ${totalStats.points}</p>
             </div>
         `;
 
@@ -1026,6 +1081,7 @@ async function showPlayerMatchResults(participantId) {
                 rounds[match.round_id] = {
                     round_number: match.round_number,
                     round_id: match.round_id,
+                    is_frozen: match.is_frozen,
                     matches: []
                 };
             }
@@ -1039,7 +1095,7 @@ async function showPlayerMatchResults(participantId) {
         sortedRounds.forEach(round => {
             console.log('Creating round section:', round);
             html += `<div class="player-round-section" data-round-id="${round.round_id || 'unknown'}">`;
-            html += `<h4>第${round.round_number}ラウンド</h4>`;
+            html += `<h4>第${round.round_number}ラウンド${round.is_frozen ? ' 🔒' : ''}</h4>`;
             html += `<div class="player-round-matches">`;
 
             round.matches.forEach(match => {
@@ -1079,13 +1135,15 @@ async function showPlayerMatchResults(participantId) {
                         <div class="player-match-my-result">
                             <span class="result-label">私の成績:</span>
                             <span class="result-values">
-                                勝: ${myWin} / 負: ${myLoss} / 引: ${myDraw} / ポイント: ${myPoints}
+                                勝: ${myWin} / 負: ${myLoss} / ポイント: ${myPoints}
                             </span>
                         </div>
                         <div class="player-match-actions">
-                            ${match.completed
-                                ? `<button class="btn-secondary" onclick="editPlayerMatch(${match.match_id}, ${match.round_id}, ${match.table_number})">結果を修正</button>`
-                                : `<button class="btn-primary" onclick="editPlayerMatch(${match.match_id}, ${match.round_id}, ${match.table_number})">結果を記録</button>`
+                            ${(currentUser && currentUser.is_admin) || !round.is_frozen
+                                ? (match.completed
+                                    ? `<button class="btn-secondary" onclick="editPlayerMatch(${match.match_id}, ${match.round_id}, ${match.table_number})">結果を修正</button>`
+                                    : `<button class="btn-primary" onclick="editPlayerMatch(${match.match_id}, ${match.round_id}, ${match.table_number})">結果を記録</button>`)
+                                : `<span class="disabled-btn">🔒 フリーズ済み</span>`
                             }
                         </div>
                     </div>
@@ -1142,7 +1200,6 @@ async function editPlayerMatch(matchId, roundId, tableNumber) {
                                 <select class="player-result-select" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                                     <option value="win" ${existingResults[p.id]?.win === 1 ? 'selected' : ''}>勝ち</option>
                                     <option value="lose" ${existingResults[p.id]?.loss === 1 ? 'selected' : ''}>負け</option>
-                                    <option value="draw" ${existingResults[p.id]?.draw === 1 ? 'selected' : ''}>引き分け</option>
                                     <option value="" ${!existingResults[p.id] ? 'selected' : ''}>-</option>
                                 </select>
                             </label>
@@ -1440,7 +1497,6 @@ async function showMatchResults(matchId) {
                                 <select class="result-select" ${!currentUser || currentUser.is_admin || p.id === currentUser.participant_id ? '' : 'disabled'}>
                                     <option value="win">勝ち</option>
                                     <option value="lose">負け</option>
-                                    <option value="draw">引き分け</option>
                                     <option value="" selected>-</option>
                                 </select>
                             </label>
@@ -1455,6 +1511,8 @@ async function showMatchResults(matchId) {
         `;
 
         document.getElementById('match-form-title').textContent = '結果を記録';
+        document.getElementById('submit-results-btn').style.display = '';
+        document.getElementById('cancel-edit-btn').style.display = '';
         form.classList.remove('hidden');
     } catch (error) {
         console.error('試合詳細取得エラー:', error);

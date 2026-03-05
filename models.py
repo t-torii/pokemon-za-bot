@@ -72,6 +72,7 @@ class Round(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     round_number = db.Column(db.Integer, unique=True, nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
+    is_frozen = db.Column(db.Boolean, default=False, nullable=False)
 
 
 class Match(db.Model):
@@ -95,6 +96,9 @@ class Match(db.Model):
 
 class MatchResult(db.Model):
     __tablename__ = 'match_results'
+    __table_args__ = (
+        db.UniqueConstraint('match_id', 'player_id', name='uq_match_result_match_player'),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     match_id = db.Column(db.Integer, db.ForeignKey('matches.id'), nullable=False)

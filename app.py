@@ -220,6 +220,12 @@ def record_match():
                 if result.get('player_id') and result['player_id'] != user_participant_id:
                     return jsonify({'error': 'Access denied - you can only modify your own results'}), 403
 
+    # フリーズされたラウンドは管理者以外は結果登録・修正不可
+    if match and not user.is_admin:
+        round_obj = Round.query.get(match.round_id)
+        if round_obj and round_obj.is_frozen:
+            return jsonify({'error': 'このラウンドはフリーズされています'}), 403
+
     if match and match.result_json is not None:
         # Update existing results
         _, error = swiss.update_match_results(match_id, results)
@@ -438,9 +444,27 @@ def get_rounds():
         rounds_data.append({
             'id': r.id,
             'round_number': r.round_number,
-            'can_delete': can_delete
+            'can_delete': can_delete,
+            'is_frozen': r.is_frozen
         })
     return jsonify(rounds_data)
+
+
+@app.route('/api/rounds/<int:round_id>/freeze', methods=['POST'])
+@admin_required
+def toggle_freeze_round(round_id):
+    """Toggle freeze status of a round (admin only)."""
+    round_obj = Round.query.get(round_id)
+    if not round_obj:
+        return jsonify({'error': 'Round not found'}), 404
+
+    round_obj.is_frozen = not round_obj.is_frozen
+    db.session.commit()
+
+    return jsonify({
+        'message': 'フリーズ済み' if round_obj.is_frozen else 'フリーズ解除済み',
+        'is_frozen': round_obj.is_frozen
+    })
 
 
 @app.route('/api/rounds/<int:round_id>', methods=['DELETE'])
@@ -558,7 +582,8 @@ def get_player_matches(participant_id):
             'opponents': opponents,
             'completed': match.result_json is not None,
             'players': players_info,
-            'result': match.result_json
+            'result': match.result_json,
+            'is_frozen': round_obj.is_frozen if round_obj else False
         })
 
     # Calculate total stats for this participant from all matches
@@ -605,6 +630,13 @@ def update_player_match(participant_id, round_id):
 
     if not match:
         return jsonify({'error': 'Match not found'}), 404
+
+    # フリーズされたラウンドは管理者以外は結果登録・修正不可
+    user = get_current_user()
+    if not user.is_admin:
+        round_obj = Round.query.get(round_id)
+        if round_obj and round_obj.is_frozen:
+            return jsonify({'error': 'このラウンドはフリーズされています'}), 403
 
     if match.result_json is not None:
         # 既存の結果を更新
@@ -683,6 +715,26 @@ def clear_data():
 
 with app.app_context():
     db.create_all()
+
+    # 既存DBに is_frozen カラムを追加（新規DBはモデル定義で対応済み）
+    try:
+        db.session.execute(db.text(
+            'ALTER TABLE rounds ADD COLUMN is_frozen BOOLEAN NOT NULL DEFAULT 0'
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    # 既存DBに対してユニーク制約を追加（新規DBはモデル定義で対応済み）
+    # 既存の重複データがある場合は失敗するが、それ以降の重複は with_for_update で防ぐ
+    try:
+        db.session.execute(db.text(
+            'CREATE UNIQUE INDEX IF NOT EXISTS uq_match_result_match_player '
+            'ON match_results (match_id, player_id)'
+        ))
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
 
     # Create default users if not exists
     admin_user = User.query.filter_by(username='admin').first()

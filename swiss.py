@@ -327,9 +327,17 @@ def get_match_with_results(match_id):
 
 def process_match_results(match_id, results):
     """Process new match results (for first-time recording)."""
-    match = Match.query.get(match_id)
+    from sqlalchemy.exc import IntegrityError
+
+    # with_for_update() により SQLite が BEGIN IMMEDIATE を発行し、
+    # 同時書き込みをシリアライズして競合状態を防ぐ
+    match = db.session.query(Match).filter(Match.id == match_id).with_for_update().first()
     if not match:
         return None, "Match not found"
+
+    # ロック取得後に最新状態を確認（他プレイヤーが先に登録済みでないかチェック）
+    if match.result_json is not None:
+        return None, "Results already recorded by another player"
 
     # Get all player IDs involved in this match (exclude BYE which has negative IDs)
     player_ids = [match.player1_id, match.player2_id, match.player3_id, match.player4_id]
@@ -356,14 +364,21 @@ def process_match_results(match_id, results):
 
     # Mark match as completed
     match.result_json = str(results)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return None, "Results already recorded (conflict)"
 
     return {}, None
 
 
 def update_match_results(match_id, results):
     """Update match results (for editing)."""
-    match = Match.query.get(match_id)
+    from sqlalchemy.exc import IntegrityError
+
+    # with_for_update() により同時更新の競合を防ぐ
+    match = db.session.query(Match).filter(Match.id == match_id).with_for_update().first()
     if not match:
         return None, "Match not found"
 
@@ -395,6 +410,10 @@ def update_match_results(match_id, results):
 
     # Mark match as completed
     match.result_json = str(results)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        return None, "Update conflict, please try again"
 
     return {}, None

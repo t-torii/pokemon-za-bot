@@ -161,6 +161,21 @@ header h1 {
     background: #c53030;
 }
 
+.btn-warning {
+    background: #dd6b20;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background 0.3s ease;
+}
+
+.btn-warning:hover {
+    background: #c05621;
+}
+
 .btn-small {
     padding: 6px 12px;
     font-size: 0.85rem;
