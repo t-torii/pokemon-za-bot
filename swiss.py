@@ -374,7 +374,7 @@ def process_match_results(match_id, results):
 
 
 def update_match_results(match_id, results):
-    """Update match results (for editing)."""
+    """Update match results (for editing). 管理者専用: 全プレイヤー結果を一括上書き。"""
     from sqlalchemy.exc import IntegrityError
 
     # with_for_update() により同時更新の競合を防ぐ
@@ -416,4 +416,43 @@ def update_match_results(match_id, results):
         db.session.rollback()
         return None, "Update conflict, please try again"
 
+    return {}, None
+
+
+def update_player_result(match_id, player_id, result):
+    """特定プレイヤーの結果だけをUPSERT（他プレイヤーの結果は変更しない）。
+    非管理者が自分の結果のみ登録・修正する際に使用。"""
+    match = db.session.query(Match).filter(Match.id == match_id).with_for_update().first()
+    if not match:
+        return None, "Match not found"
+
+    existing = MatchResult.query.filter_by(match_id=match_id, player_id=player_id).first()
+    if existing:
+        existing.win = result.get('win', 0)
+        existing.loss = result.get('loss', 0)
+        existing.draw = result.get('draw', 0)
+        existing.points = result.get('points', 0)
+    else:
+        new_result = MatchResult(
+            match_id=match_id,
+            player_id=player_id,
+            win=result.get('win', 0),
+            loss=result.get('loss', 0),
+            draw=result.get('draw', 0),
+            points=result.get('points', 0)
+        )
+        db.session.add(new_result)
+
+    db.session.flush()
+
+    # result_json を全MatchResultから再構築して完了フラグを更新
+    all_results = MatchResult.query.filter_by(match_id=match_id).all()
+    result_json_data = [
+        {'player_id': r.player_id, 'win': r.win, 'loss': r.loss,
+         'draw': r.draw, 'points': r.points}
+        for r in all_results
+    ]
+    match.result_json = str(result_json_data)
+
+    db.session.commit()
     return {}, None

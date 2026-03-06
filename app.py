@@ -226,11 +226,17 @@ def record_match():
         if round_obj and round_obj.is_frozen:
             return jsonify({'error': 'このラウンドはフリーズされています'}), 403
 
-    if match and match.result_json is not None:
-        # Update existing results
+    # 非管理者は自分のデータのみUPSERT（他プレイヤーの結果を上書きしない）
+    if not user.is_admin:
+        player_result = next((r for r in results if r.get('player_id') == user.participant_id), None)
+        if player_result is None:
+            return jsonify({'error': 'Player result not found in submitted data'}), 400
+        _, error = swiss.update_player_result(match_id, user.participant_id, player_result)
+    elif match and match.result_json is not None:
+        # 管理者: 既存結果を全更新
         _, error = swiss.update_match_results(match_id, results)
     else:
-        # Record new results
+        # 管理者: 新規記録
         _, error = swiss.process_match_results(match_id, results)
 
     if error:
@@ -638,11 +644,17 @@ def update_player_match(participant_id, round_id):
         if round_obj and round_obj.is_frozen:
             return jsonify({'error': 'このラウンドはフリーズされています'}), 403
 
-    if match.result_json is not None:
-        # 既存の結果を更新
+    # 非管理者は自分のデータのみUPSERT（他プレイヤーの結果を上書きしない）
+    if not user.is_admin:
+        player_result = next((r for r in results if r.get('player_id') == participant_id), None)
+        if player_result is None:
+            return jsonify({'error': 'Player result not found in submitted data'}), 400
+        _, error = swiss.update_player_result(match.id, participant_id, player_result)
+    elif match.result_json is not None:
+        # 管理者: 既存結果を全更新
         _, error = swiss.update_match_results(match.id, results)
     else:
-        # 新規に結果を記録
+        # 管理者: 新規記録
         _, error = swiss.process_match_results(match.id, results)
 
     if error:
