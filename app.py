@@ -708,6 +708,22 @@ def get_round_matches(round_id):
     })
 
 
+@app.route('/api/users/clear', methods=['POST'])
+@admin_required
+def clear_non_admin_users():
+    """Delete all non-admin users and their associated participants."""
+    non_admin_users = User.query.filter_by(is_admin=False).all()
+    for user in non_admin_users:
+        if user.participant_id:
+            participant = Participant.query.get(user.participant_id)
+            if participant:
+                MatchResult.query.filter_by(player_id=participant.id).delete()
+                db.session.delete(participant)
+        db.session.delete(user)
+    db.session.commit()
+    return jsonify({'message': f'{len(non_admin_users)}件のアカウントを削除しました'})
+
+
 @app.route('/api/clear', methods=['POST'])
 def clear_data():
     """Clear all tournament data (for testing)."""

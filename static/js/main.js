@@ -9,6 +9,9 @@ let editPairingState = {
     selectedCells: [] // 選択されたプレイヤーのセル
 };
 
+// 全結果展開状態
+let allResultsExpanded = false;
+
 document.addEventListener('DOMContentLoaded', async () => {
     // 現在のユーザーをチェック
     await checkUserSession();
@@ -49,6 +52,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     content.classList.add('active');
                 }
             });
+
+            // 現在のタブを保存（ページ更新後に復元するため）
+            localStorage.setItem('activeTab', tabName);
 
             // 順位タブに切り替えたときにデータを更新
             if (tabName === 'standings') {
@@ -110,6 +116,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     // データクリアボタン
     document.getElementById('clear-data-btn').addEventListener('click', clearAllData);
 
+    // 全アカウント削除ボタン（admin除く）
+    document.getElementById('clear-users-btn').addEventListener('click', clearNonAdminUsers);
+
+    // 参加者更新ボタン
+    document.getElementById('refresh-participants-btn').addEventListener('click', () => {
+        loadParticipants();
+        loadParticipantList();
+    });
+
     // 順位更新ボタン
     document.getElementById('refresh-standings-btn').addEventListener('click', refreshStandings);
 
@@ -135,11 +150,30 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
-    // 初期データ読み込み（タブがアクティブな場合）
-    if (currentUser && currentUser.is_admin) {
-        // 管理者はアカウント管理タブを表示しない（デフォルトで参加者タブ）
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    // 保存済みタブを復元（なければ参加者タブをデフォルトに）
+    const savedTab = localStorage.getItem('activeTab') || 'participants';
+    // 非管理者はusersタブにアクセス不可なのでフォールバック
+    const restoredTab = (savedTab === 'users' && currentUser && !currentUser.is_admin)
+        ? 'participants'
+        : savedTab;
+
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    const restoredBtn = document.querySelector(`[data-tab="${restoredTab}"]`);
+    if (restoredBtn) {
+        restoredBtn.classList.add('active');
+        document.getElementById(restoredTab).classList.add('active');
+
+        // 復元したタブのデータを読み込む
+        if (restoredTab === 'standings') {
+            refreshStandings();
+        } else if (restoredTab === 'matches') {
+            refreshMatches();
+        } else if (restoredTab === 'users') {
+            loadUsers();
+        }
+    } else {
+        // タブが存在しない場合は参加者タブに戻す
         document.querySelector('[data-tab="participants"]').classList.add('active');
         document.getElementById('participants').classList.add('active');
     }
@@ -459,7 +493,21 @@ async function viewRoundMatches(roundId) {
         });
 
         tableHtml += '</tbody></table></div>';
-        container.innerHTML = tableHtml;
+
+        const controlsBar = `
+            <div class="match-controls-bar">
+                <button class="btn-secondary" id="expand-all-btn" onclick="toggleExpandAllResults('${roundId}')">
+                    ${allResultsExpanded ? '結果を折りたたむ' : '全結果を展開'}
+                </button>
+                <button class="btn-secondary" onclick="refreshMatchesInContainer()">更新</button>
+            </div>
+        `;
+        container.innerHTML = controlsBar + tableHtml;
+
+        // 展開状態を復元
+        if (allResultsExpanded) {
+            await expandAllResults();
+        }
     } catch (error) {
         console.error('試合読み込みエラー:', error);
     }
@@ -662,6 +710,7 @@ async function refreshStandings() {
 }
 
 async function refreshMatches() {
+    allResultsExpanded = false;
     await loadRoundSelect();
     const list = document.getElementById('round-list');
     const selected = list.querySelector('.round-list-item.selected');
@@ -676,6 +725,74 @@ async function refreshMatches() {
     document.getElementById('edit-pairing-btn').textContent = '組み合わせを編集';
     document.getElementById('edit-pairing-btn').className = 'btn-secondary';
     document.querySelectorAll('.player-cell.selected').forEach(cell => cell.classList.remove('selected'));
+}
+
+// 展開状態を維持したままラウンドを更新
+async function refreshMatchesInContainer() {
+    const list = document.getElementById('round-list');
+    const selected = list.querySelector('.round-list-item.selected');
+    if (!selected) return;
+    const currentRoundId = selected.dataset.roundId;
+
+    await loadRoundSelect();
+
+    // 同じラウンドを再選択
+    const newSelected = document.querySelector(`.round-list-item[data-round-id="${currentRoundId}"]`);
+    if (newSelected) {
+        document.querySelectorAll('.round-list-item').forEach(i => i.classList.remove('selected'));
+        newSelected.classList.add('selected');
+    }
+    await viewRoundMatches(currentRoundId);
+}
+
+// 全テーブルの結果を展開/折りたたみ切り替え
+function toggleExpandAllResults(roundId) {
+    allResultsExpanded = !allResultsExpanded;
+    const btn = document.getElementById('expand-all-btn');
+    if (allResultsExpanded) {
+        btn.textContent = '結果を折りたたむ';
+        expandAllResults();
+    } else {
+        btn.textContent = '全結果を展開';
+        document.querySelectorAll('.inline-results-row').forEach(r => r.remove());
+    }
+}
+
+// 全試合の結果をインライン表示
+async function expandAllResults() {
+    const matchRows = document.querySelectorAll('#matches-container tr[data-match-id]');
+    for (const row of matchRows) {
+        const matchId = row.dataset.matchId;
+
+        // 既存のインライン行を削除
+        const existing = document.getElementById(`inline-results-${matchId}`);
+        if (existing) existing.remove();
+
+        try {
+            const response = await fetch(`/api/matches/${matchId}`);
+            const match = await response.json();
+
+            const players = match.players.filter(p => p.id && p.id > 0);
+            let hasUnrecorded = false;
+            const resultsHtml = players.map(p => {
+                    const result = match.results.find(r => r.player_id === p.id);
+                    if (!result) hasUnrecorded = true;
+                    const resultText = result
+                        ? `勝:${result.win} 負:${result.loss} 分:${result.draw} ${result.points}pt`
+                        : '⚠ 未記録';
+                    const cls = result ? 'inline-result-item' : 'inline-result-item unrecorded';
+                    return `<span class="${cls}"><strong>${escapeHtml(p.name)}</strong>: ${resultText}</span>`;
+                }).join('');
+
+            const inlineRow = document.createElement('tr');
+            inlineRow.id = `inline-results-${matchId}`;
+            inlineRow.className = 'inline-results-row' + (hasUnrecorded ? ' has-unrecorded' : '');
+            inlineRow.innerHTML = `<td colspan="6" class="inline-results-cell">${resultsHtml || '未記録'}</td>`;
+            row.insertAdjacentElement('afterend', inlineRow);
+        } catch (e) {
+            console.error('結果取得エラー:', e);
+        }
+    }
 }
 
 // ラウンドリストを再読み込み（削除時などに使用）
@@ -1537,6 +1654,31 @@ async function clearAllData() {
         }
     } catch (error) {
         console.error('データクリアエラー:', error);
+        alert('エラー: ' + error.message);
+    }
+}
+
+async function clearNonAdminUsers() {
+    if (!confirm('admin以外の全アカウントと紐づく参加者データを削除します。\nこの操作は元に戻せません。よろしいですか？')) return;
+
+    try {
+        const response = await fetch('/api/users/clear', { method: 'POST' });
+
+        if (response.ok) {
+            const data = await response.json();
+            alert(data.message);
+            loadUsers();
+            loadParticipants();
+            refreshStandings();
+        } else if (response.status === 401) {
+            alert('ログインが必要です');
+            window.location.href = '/';
+        } else {
+            const error = await response.json();
+            alert('エラー: ' + (error.error || '削除に失敗しました'));
+        }
+    } catch (error) {
+        console.error('アカウント削除エラー:', error);
         alert('エラー: ' + error.message);
     }
 }

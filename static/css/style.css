@@ -925,3 +925,41 @@ footer button {
 .user-actions button.btn-approve:hover {
     background: #38a169;
 }
+
+/* 試合タブ: コントロールバー */
+.match-controls-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+/* 試合タブ: インライン結果行 */
+.inline-results-row td {
+    background: #f0fff4;
+    border-bottom: 2px solid #c6f6d5;
+}
+
+.inline-results-cell {
+    padding: 8px 15px !important;
+    font-size: 0.9em;
+}
+
+.inline-result-item {
+    display: inline-block;
+    margin-right: 20px;
+    color: #2d3748;
+}
+
+.inline-result-item.unrecorded {
+    color: #c53030;
+    font-weight: bold;
+    background: #fff5f5;
+    border: 1px solid #fc8181;
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+.inline-results-row.has-unrecorded td {
+    background: #fffbeb;
+    border-left: 4px solid #f6ad55;
+}
