@@ -1004,6 +1004,26 @@ def reset_password_request_api():
     })
 
 
+@app.route('/api/users/<int:user_id>/admin_reset_password', methods=['POST'])
+@admin_required
+def admin_reset_password(user_id):
+    """Admin-initiated password reset. Generates a new password immediately."""
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+
+    new_password = user.generate_reset_password()
+    user.set_password(new_password)
+    user.reset_password = None
+    user.reset_password_expires = None
+    db.session.commit()
+
+    return jsonify({
+        'message': 'Password reset completed',
+        'new_password': new_password
+    })
+
+
 @app.route('/api/users/<int:user_id>/reset_password', methods=['POST'])
 def reset_password(user_id):
     """Reset password for a user."""

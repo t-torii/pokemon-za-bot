@@ -1708,7 +1708,8 @@ async function loadUsers() {
                 <td>
                     <div class="user-actions">
                         ${!u.is_approved ? `<button class="btn-approve" onclick="approveUser(${u.id})">承認する</button>` : ''}
-                        ${u.reset_password ? `<button class="btn-reset-password" onclick="resetPassword(${u.id})">パスワード初期化</button>` : ''}
+                        ${u.reset_password ? `<button class="btn-warning" onclick="adminResetPassword(${u.id})">⚠ 初期化リクエスト</button>` : ''}
+                        ${u.id !== currentUser.id ? `<button class="btn-reset-password" onclick="adminResetPassword(${u.id})">パスワード初期化</button>` : ''}
                         ${u.id !== currentUser.id ? `<button class="btn-delete" onclick="deleteUser(${u.id})">削除</button>` : ''}
                     </div>
                 </td>
@@ -1765,11 +1766,11 @@ async function approveUser(id) {
     }
 }
 
-async function resetPassword(id) {
+async function adminResetPassword(id) {
     if (!confirm('このユーザーのパスワードを初期化しますか？')) return;
 
     try {
-        const response = await fetch(`/api/users/${id}/reset_password`, {
+        const response = await fetch(`/api/users/${id}/admin_reset_password`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' }
         });
